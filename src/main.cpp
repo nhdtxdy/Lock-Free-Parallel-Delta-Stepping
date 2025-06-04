@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "dijkstra.h"
 #include "delta_stepping_sequential.h"
+#include "correctness_checker.h"
 
 Graph parse_graph_from_file(std::string filename, bool normalize_weights = false) {
     std::ifstream in(filename);
@@ -34,5 +35,6 @@ Graph parse_graph_from_file(std::string filename, bool normalize_weights = false
 }
 
 int main() {
+    run_correctness_tests();
     return 0;
 }
