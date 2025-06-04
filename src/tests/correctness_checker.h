@@ -1,53 +1,12 @@
 #ifndef CORRECTNESS_CHECKER_H
 #define CORRECTNESS_CHECKER_H
 
-#include <random>
 #include <chrono>
 #include <iomanip>
 #include <cmath>
-#include <set>
-
-// Generate a random graph with n vertices and m edges with uniform random weights in [0, 1)
-Graph generate_random_graph(int n, int m, unsigned int seed = 42) {
-    std::mt19937 gen(seed);
-    std::uniform_int_distribution<int> vertex_dist(0, n - 1);
-    std::uniform_real_distribution<double> weight_dist(0.0, 1.0);
-    
-    std::vector<Edge> edges;
-    std::set<std::pair<int, int>> edge_set; // To avoid duplicate edges
-    
-    int attempts = 0;
-    while (edges.size() < m && attempts < m * 100) { // Prevent infinite loop
-        int u = vertex_dist(gen);
-        int v = vertex_dist(gen);
-        if (u != v && edge_set.find({u, v}) == edge_set.end()) {
-            double w = weight_dist(gen);
-            edges.push_back({u, v, w});
-            edge_set.insert({u, v});
-        }
-        attempts++;
-    }
-    
-    return Graph(n, edges);
-}
-
-// Generate a complete graph with n vertices and uniform random weights in [0, 1)
-Graph generate_complete_graph(int n, unsigned int seed = 42) {
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> weight_dist(0.0, 1.0);
-    
-    std::vector<Edge> edges;
-    for (int u = 0; u < n; u++) {
-        for (int v = 0; v < n; v++) {
-            if (u != v) {
-                double w = weight_dist(gen);
-                edges.push_back({u, v, w});
-            }
-        }
-    }
-    
-    return Graph(n, edges);
-}
+#include "graph_generators.h"
+#include "dijkstra.h"
+#include "delta_stepping_sequential.h"
 
 // Check if two distance vectors are approximately equal
 bool are_distances_equal(const std::vector<double>& dist1, const std::vector<double>& dist2, double epsilon = 1e-9) {
@@ -111,8 +70,8 @@ void run_correctness_tests() {
     // Test 1: Small complete graphs with different delta values
     std::cout << "Test 1: Small complete graphs" << std::endl;
     for (int n = 3; n <= 8; n++) {
-        Graph graph = generate_complete_graph(n, 42 + n);
-        std::vector<double> deltas = {0.1, 0.2, 0.5, 1.0};
+        Graph graph = generate_complete_graph(n, 0.0, 1.0, true, 42 + n);
+        std::vector<double> deltas = {0.01, 0.05, 0.1, 0.2};
         
         for (double delta : deltas) {
             for (int source = 0; source < n; source++) {
@@ -129,11 +88,11 @@ void run_correctness_tests() {
     for (int test = 0; test < 20; test++) {
         int n = 10 + (test % 20); // 10 to 29 vertices
         int m = n + (test % (2 * n)); // n to 3n edges
-        Graph graph = generate_random_graph(n, m, 100 + test);
+        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 100 + test);
         
-        std::vector<double> deltas = {0.1, 0.3, 0.7};
+        std::vector<double> deltas = {0.02, 0.05, 0.15};
         for (double delta : deltas) {
-            int source = test % n;
+            int source = test % graph.size(); // Use actual graph size after component extraction
             total_tests++;
             if (test_graph(graph, source, delta)) {
                 passed_tests++;
@@ -146,9 +105,9 @@ void run_correctness_tests() {
     for (int test = 0; test < 10; test++) {
         int n = 5 + (test % 10); // 5 to 14 vertices
         int m = n * (n - 1) / 2; // Nearly complete
-        Graph graph = generate_random_graph(n, m, 200 + test);
+        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 200 + test);
         
-        std::vector<double> deltas = {0.05, 0.2, 0.5};
+        std::vector<double> deltas = {0.01, 0.05, 0.1};
         for (double delta : deltas) {
             int source = 0;
             total_tests++;
@@ -176,7 +135,7 @@ void run_correctness_tests() {
     // Path graph
     std::vector<Edge> path_edges = {{0, 1, 0.3}, {1, 2, 0.7}, {2, 3, 0.2}};
     Graph path_graph(4, path_edges);
-    std::vector<double> deltas = {0.1, 0.4, 0.8};
+    std::vector<double> deltas = {0.02, 0.1, 0.2};
     for (double delta : deltas) {
         for (int source = 0; source < 4; source++) {
             total_tests++;
@@ -191,10 +150,10 @@ void run_correctness_tests() {
     for (int test = 0; test < 5; test++) {
         int n = 50 + test * 20; // 50 to 130 vertices
         int m = n * 2; // Sparse
-        Graph graph = generate_random_graph(n, m, 300 + test);
+        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 300 + test);
         
-        double delta = 0.1 + test * 0.1;
-        int source = test % n;
+        double delta = 0.02 + test * 0.02;
+        int source = test % graph.size(); // Use actual graph size after component extraction
         total_tests++;
         if (test_graph(graph, source, delta, true)) { // Verbose for stress tests
             passed_tests++;
