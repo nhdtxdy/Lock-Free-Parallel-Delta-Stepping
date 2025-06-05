@@ -30,7 +30,7 @@ template <class E>
 void CoarseGrainedUnboundedQueue<E>::push(const E& element) {
     std::lock_guard<std::mutex> lk(lock);
     elements.push(element);
-    not_empty.notify_all();
+    not_empty.notify_one();
     return;
 }
 
@@ -40,7 +40,7 @@ bool CoarseGrainedUnboundedQueue<E>::pop(E &res) {
     while (elements.empty()) {
         not_empty.wait(lk);
     }
-    res = elements.front();
+    res = std::move(elements.front());
     elements.pop();
     return true;
 }

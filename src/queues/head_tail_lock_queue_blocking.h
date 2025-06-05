@@ -36,7 +36,7 @@ bool HeadTailLockQueueBlocking<E>::pop(E &res) {
     }
     Node *node = head;
     Node *new_head = node->next;
-    res = new_head->data;
+    res = std::move(new_head->data);
     head = new_head;
     lk.unlock();
     delete node;

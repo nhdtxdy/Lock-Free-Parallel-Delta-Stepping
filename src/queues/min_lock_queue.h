@@ -79,7 +79,7 @@ void MinLockQueue<E>::push(const E &value) {
     
     {
         std::lock_guard<std::mutex> lk(lock);
-        not_empty.notify_one(); // TO STUDY: notify_all()?
+        not_empty.notify_one();
     }
 
     // would this code work? could be a more succinct alternative to Michael-Scott's algorithm
@@ -111,7 +111,7 @@ bool MinLockQueue<E>::pop(E &res) {
             }
             else {
                 if (head.compare_exchange_weak(old_head, next)) {
-                    res = head->next->data;
+                    res = std::move(head->next->data);
                     delete old_head;
                     return true;
                 }

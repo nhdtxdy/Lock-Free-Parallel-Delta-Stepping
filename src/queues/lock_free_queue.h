@@ -107,7 +107,7 @@ bool LockFreeQueue<E>::pop(E &res) {
             }
             else {
                 if (head.compare_exchange_weak(old_head, next)) {
-                    res = head->next->data;
+                    res = std::move(head->next->data);
                     delete old_head;
                     return true;
                 }

@@ -69,7 +69,7 @@ bool HeadTailLockQueueNonBlocking<E>::pop(E &res) {
     if (new_head == nullptr) {
         return false;
     }
-    res = new_head->data;
+    res = std::move(new_head->data);
     head = new_head;
     lk.unlock();
     delete node;
