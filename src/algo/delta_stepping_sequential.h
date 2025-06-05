@@ -1,11 +1,11 @@
-#ifndef DELTA_STEPPING_H
-#define DELTA_STEPPING_H
+#ifndef DELTA_STEPPING_SEQUENTIAL_H
+#define DELTA_STEPPING_SEQUENTIAL_H
 
-#include "shortest_path_solver.h"
+#include "shortest_path_solver_base.h"
 #include <limits>
 #include <unordered_set>
 
-class DeltaSteppingSequential : public ShortestPathSolver {
+class DeltaSteppingSequential : public ShortestPathSolverBase {
 public:
     DeltaSteppingSequential(double delta): delta(delta) {}
 
@@ -46,14 +46,14 @@ public:
                 if (old_bucket >= 0) {
                     buckets[old_bucket].erase(v);
                 }
-                if (new_bucket >= buckets.size()) {
+                if (new_bucket >= (int)buckets.size()) {
                     buckets.resize(new_bucket + 1);
                 }
                 buckets[new_bucket].insert(v);
             }
         };
 
-        for (int i = 0; i < buckets.size(); ++i) {
+        for (int i = 0; i < (int)buckets.size(); ++i) {
             std::unordered_set<int> S;
             while (!buckets[i].empty()) {
                 std::vector<int> curr_bucket(buckets[i].begin(), buckets[i].end());

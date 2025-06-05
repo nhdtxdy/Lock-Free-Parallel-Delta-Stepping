@@ -1,11 +1,11 @@
 #ifndef DIJKSTRA_H
 #define DIJKSTRA_H
 
-#include "shortest_path_solver.h"
+#include "shortest_path_solver_base.h"
 #include <queue>
 #include <limits>
 
-class Dijkstra : public ShortestPathSolver {
+class Dijkstra : public ShortestPathSolverBase {
 public:
     std::vector<double> compute(const Graph &graph, int source) const override {
         std::priority_queue<std::pair<double, int>> pq;
