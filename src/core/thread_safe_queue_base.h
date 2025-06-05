@@ -3,12 +3,13 @@
 
 template <class E>
 class ThreadSafeQueueBase {
+protected:
+    ThreadSafeQueueBase() = default;
 public:
-    virtual ~ThreadSafeQueueBase() = default;
-    virtual void push(const E &element) = 0;
-    bool pop(E &res) = 0;
-    bool empty() const = 0;
-    constexpr bool is_blocking() const = 0;
+    void push(const E &element);
+    bool pop(E &res);
+    bool empty() const;
+    constexpr bool is_blocking() const;
 };
 
 #endif
