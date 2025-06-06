@@ -4,9 +4,14 @@
 #include "head_tail_lock_queue_nonblocking.h"
 
 template<class E>
-class HeadTailLockQueueBlocking : public HeadTailLockQueueNonBlocking {
+class HeadTailLockQueueBlocking : public HeadTailLockQueueNonBlocking<E> {
 public:
-    using HeadTailLockQueueNonBlocking::HeadTailLockQueueNonBlocking;
+    using Node = typename HeadTailLockQueueNonBlocking<E>::Node;
+    using HeadTailLockQueueNonBlocking<E>::head_lock;
+    using HeadTailLockQueueNonBlocking<E>::tail_lock;
+    using HeadTailLockQueueNonBlocking<E>::head;
+    using HeadTailLockQueueNonBlocking<E>::tail;
+    using HeadTailLockQueueNonBlocking<E>::HeadTailLockQueueNonBlocking;
     void push(const E &element) override;
     bool pop(E &res) override;
     constexpr bool is_blocking() const override {

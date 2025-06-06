@@ -1,15 +1,12 @@
 #ifndef MIN_LOCK_QUEUE_H
 #define MIN_LOCK_QUEUE_H
 
-#ifndef LOCK_FREE_QUEUE_H
-#define LOCK_FREE_QUEUE
-
 #include "thread_safe_queue_base.h"
 #include <mutex>
 
 // TO STUDY: USE SHARED_PTR INSTEAD (HOW MUCH SLOWER WOULD IT BE?)
 template<class E>
-class MinLockQueue : public ThreadSafeQueueBase {
+class MinLockQueue : public ThreadSafeQueueBase<E> {
 public:
     MinLockQueue();
     ~MinLockQueue();
@@ -154,7 +151,5 @@ MinLockQueue<E>& MinLockQueue<E>::operator=(MinLockQueue&& other) noexcept {
     }
     return *this;
 }
-
-#endif
 
 #endif

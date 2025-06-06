@@ -7,7 +7,7 @@
 // non-blocking
 
 template<class E>
-class TwoStacksQueue : public ThreadSafeStackBase {
+class TwoStacksQueue : public ThreadSafeStackBase<E> {
 public:
     void push(const E &element) {
         s1.push(element);

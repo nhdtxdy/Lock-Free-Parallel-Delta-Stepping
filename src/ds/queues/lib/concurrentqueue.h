@@ -323,7 +323,7 @@ struct ConcurrentQueueDefaultTraits
 	// General-purpose size type. std::size_t is strongly recommended.
 	typedef std::size_t size_t;
 	
-	// The type used for the enqueue and dequeue indices. Must be at least as
+	// The type used for the push and dequeue indices. Must be at least as
 	// large as size_t. Should be significantly larger than the number of elements
 	// you expect to hold at once, especially if you have a high turnover rate;
 	// for example, on 32-bit x86, if you expect to have over a hundred million
@@ -335,7 +335,7 @@ struct ConcurrentQueueDefaultTraits
 	// std::atomic<std::uint64_t> is lock-free, which is platform-specific.
 	typedef std::size_t index_t;
 	
-	// Internally, all elements are enqueued and dequeued from multi-element
+	// Internally, all elements are pushd and dequeued from multi-element
 	// blocks; this is the smallest controllable unit. If you expect few elements
 	// but many producers, a smaller block size should be favoured. For few producers
 	// and/or many elements, a larger block size is preferred. A sane default
@@ -360,7 +360,7 @@ struct ConcurrentQueueDefaultTraits
 	// The initial size of the hash table mapping thread IDs to implicit producers.
 	// Note that the hash is resized every time it becomes half full.
 	// Must be a power of two, and either 0 or at least 1. If 0, implicit production
-	// (using the enqueue methods without an explicit producer token) is disabled.
+	// (using the push methods without an explicit producer token) is disabled.
 	static const size_t INITIAL_IMPLICIT_PRODUCER_HASH_SIZE = 32;
 	
 	// Controls the number of items that an explicit consumer (i.e. one with a token)
@@ -368,8 +368,8 @@ struct ConcurrentQueueDefaultTraits
 	// internal queue.
 	static const std::uint32_t EXPLICIT_CONSUMER_CONSUMPTION_QUOTA_BEFORE_ROTATE = 256;
 	
-	// The maximum number of elements (inclusive) that can be enqueued to a sub-queue.
-	// Enqueue operations that would cause this limit to be surpassed will fail. Note
+	// The maximum number of elements (inclusive) that can be pushd to a sub-queue.
+	// Push operations that would cause this limit to be surpassed will fail. Note
 	// that this limit is enforced at the block level (for performance reasons), i.e.
 	// it's rounded up to the nearest block size.
 	static const size_t MAX_SUBQUEUE_SIZE = details::const_numeric_max<size_t>::value;
@@ -797,14 +797,14 @@ public:
 	static_assert((EXPLICIT_INITIAL_INDEX_SIZE > 1) && !(EXPLICIT_INITIAL_INDEX_SIZE & (EXPLICIT_INITIAL_INDEX_SIZE - 1)), "Traits::EXPLICIT_INITIAL_INDEX_SIZE must be a power of 2 (and greater than 1)");
 	static_assert((IMPLICIT_INITIAL_INDEX_SIZE > 1) && !(IMPLICIT_INITIAL_INDEX_SIZE & (IMPLICIT_INITIAL_INDEX_SIZE - 1)), "Traits::IMPLICIT_INITIAL_INDEX_SIZE must be a power of 2 (and greater than 1)");
 	static_assert((INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0) || !(INITIAL_IMPLICIT_PRODUCER_HASH_SIZE & (INITIAL_IMPLICIT_PRODUCER_HASH_SIZE - 1)), "Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE must be a power of 2");
-	static_assert(INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0 || INITIAL_IMPLICIT_PRODUCER_HASH_SIZE >= 1, "Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE must be at least 1 (or 0 to disable implicit enqueueing)");
+	static_assert(INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0 || INITIAL_IMPLICIT_PRODUCER_HASH_SIZE >= 1, "Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE must be at least 1 (or 0 to disable implicit pushing)");
 
 public:
 	// Creates a queue with at least `capacity` element slots; note that the
 	// actual number of elements that can be inserted without additional memory
 	// allocation depends on the number of producers and the block size (e.g. if
 	// the block size is equal to `capacity`, only a single block will be allocated
-	// up-front, which means only a single producer will be able to enqueue elements
+	// up-front, which means only a single producer will be able to push elements
 	// without an extra allocation -- blocks aren't shared between producers).
 	// This method is not thread safe -- it is up to the user to ensure that the
 	// queue is fully constructed before it starts being used by other threads (this
@@ -987,15 +987,19 @@ private:
 	}
 	
 public:
+	constexpr bool is_blocking() const {
+		return false;
+	}
+
 	// Enqueues a single item (by copying it).
 	// Allocates memory if required. Only fails if memory allocation fails (or implicit
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0,
 	// or Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(T const& item)
+	inline bool push(T const& item)
 	{
 		MOODYCAMEL_CONSTEXPR_IF (INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0) return false;
-		else return inner_enqueue<CanAlloc>(item);
+		else return inner_push<CanAlloc>(item);
 	}
 	
 	// Enqueues a single item (by moving it, if possible).
@@ -1003,28 +1007,28 @@ public:
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0,
 	// or Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(T&& item)
+	inline bool push(T&& item)
 	{
 		MOODYCAMEL_CONSTEXPR_IF (INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0) return false;
-		else return inner_enqueue<CanAlloc>(std::move(item));
+		else return inner_push<CanAlloc>(std::move(item));
 	}
 	
 	// Enqueues a single item (by copying it) using an explicit producer token.
 	// Allocates memory if required. Only fails if memory allocation fails (or
 	// Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(producer_token_t const& token, T const& item)
+	inline bool push(producer_token_t const& token, T const& item)
 	{
-		return inner_enqueue<CanAlloc>(token, item);
+		return inner_push<CanAlloc>(token, item);
 	}
 	
 	// Enqueues a single item (by moving it, if possible) using an explicit producer token.
 	// Allocates memory if required. Only fails if memory allocation fails (or
 	// Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(producer_token_t const& token, T&& item)
+	inline bool push(producer_token_t const& token, T&& item)
 	{
-		return inner_enqueue<CanAlloc>(token, std::move(item));
+		return inner_push<CanAlloc>(token, std::move(item));
 	}
 	
 	// Enqueues several items.
@@ -1057,10 +1061,10 @@ public:
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE
 	// is 0).
 	// Thread-safe.
-	inline bool try_enqueue(T const& item)
+	inline bool try_push(T const& item)
 	{
 		MOODYCAMEL_CONSTEXPR_IF (INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0) return false;
-		else return inner_enqueue<CannotAlloc>(item);
+		else return inner_push<CannotAlloc>(item);
 	}
 	
 	// Enqueues a single item (by moving it, if possible).
@@ -1068,26 +1072,26 @@ public:
 	// Fails if not enough room to enqueue (or implicit production is
 	// disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0).
 	// Thread-safe.
-	inline bool try_enqueue(T&& item)
+	inline bool try_push(T&& item)
 	{
 		MOODYCAMEL_CONSTEXPR_IF (INITIAL_IMPLICIT_PRODUCER_HASH_SIZE == 0) return false;
-		else return inner_enqueue<CannotAlloc>(std::move(item));
+		else return inner_push<CannotAlloc>(std::move(item));
 	}
 	
 	// Enqueues a single item (by copying it) using an explicit producer token.
 	// Does not allocate memory. Fails if not enough room to enqueue.
 	// Thread-safe.
-	inline bool try_enqueue(producer_token_t const& token, T const& item)
+	inline bool try_push(producer_token_t const& token, T const& item)
 	{
-		return inner_enqueue<CannotAlloc>(token, item);
+		return inner_push<CannotAlloc>(token, item);
 	}
 	
 	// Enqueues a single item (by moving it, if possible) using an explicit producer token.
 	// Does not allocate memory. Fails if not enough room to enqueue.
 	// Thread-safe.
-	inline bool try_enqueue(producer_token_t const& token, T&& item)
+	inline bool try_push(producer_token_t const& token, T&& item)
 	{
-		return inner_enqueue<CannotAlloc>(token, std::move(item));
+		return inner_push<CannotAlloc>(token, std::move(item));
 	}
 	
 	// Enqueues several items.
@@ -1122,7 +1126,7 @@ public:
 	// were checked (so, the queue is likely but not guaranteed to be empty).
 	// Never allocates. Thread-safe.
 	template<typename U>
-	bool try_dequeue(U& item)
+	bool try_pop(U& item)
 	{
 		// Instead of simply trying each producer in turn (which could cause needless contention on the first
 		// producer), we score them heuristically.
@@ -1143,11 +1147,11 @@ public:
 		// If there was at least one non-empty queue but it appears empty at the time
 		// we try to dequeue from it, we need to make sure every queue's been tried
 		if (nonEmptyCount > 0) {
-			if ((details::likely)(best->dequeue(item))) {
+			if ((details::likely)(best->pop(item))) {
 				return true;
 			}
 			for (auto ptr = producerListTail.load(std::memory_order_acquire); ptr != nullptr; ptr = ptr->next_prod()) {
-				if (ptr != best && ptr->dequeue(item)) {
+				if (ptr != best && ptr->pop(item)) {
 					return true;
 				}
 			}
@@ -1158,7 +1162,7 @@ public:
 	// Attempts to dequeue from the queue.
 	// Returns false if all producer streams appeared empty at the time they
 	// were checked (so, the queue is likely but not guaranteed to be empty).
-	// This differs from the try_dequeue(item) method in that this one does
+	// This differs from the try_pop(item) method in that this one does
 	// not attempt to reduce contention by interleaving the order that producer
 	// streams are dequeued from. So, using this method can reduce overall throughput
 	// under contention, but will give more predictable results in single-threaded
@@ -1168,7 +1172,7 @@ public:
 	bool try_dequeue_non_interleaved(U& item)
 	{
 		for (auto ptr = producerListTail.load(std::memory_order_acquire); ptr != nullptr; ptr = ptr->next_prod()) {
-			if (ptr->dequeue(item)) {
+			if (ptr->pop(item)) {
 				return true;
 			}
 		}
@@ -1180,7 +1184,7 @@ public:
 	// were checked (so, the queue is likely but not guaranteed to be empty).
 	// Never allocates. Thread-safe.
 	template<typename U>
-	bool try_dequeue(consumer_token_t& token, U& item)
+	bool try_pop(consumer_token_t& token, U& item)
 	{
 		// The idea is roughly as follows:
 		// Every 256 items from one producer, make everyone rotate (increase the global offset) -> this means the highest efficiency consumer dictates the rotation speed of everyone else, more or less
@@ -1196,7 +1200,7 @@ public:
 		
 		// If there was at least one non-empty queue but it appears empty at the time
 		// we try to dequeue from it, we need to make sure every queue's been tried
-		if (static_cast<ProducerBase*>(token.currentProducer)->dequeue(item)) {
+		if (static_cast<ProducerBase*>(token.currentProducer)->pop(item)) {
 			if (++token.itemsConsumedFromCurrent == EXPLICIT_CONSUMER_CONSUMPTION_QUOTA_BEFORE_ROTATE) {
 				globalExplicitConsumerOffset.fetch_add(1, std::memory_order_relaxed);
 			}
@@ -1209,7 +1213,7 @@ public:
 			ptr = tail;
 		}
 		while (ptr != static_cast<ProducerBase*>(token.currentProducer)) {
-			if (ptr->dequeue(item)) {
+			if (ptr->pop(item)) {
 				token.currentProducer = ptr;
 				token.itemsConsumedFromCurrent = 1;
 				return true;
@@ -1299,7 +1303,7 @@ public:
 	template<typename U>
 	inline bool try_dequeue_from_producer(producer_token_t const& producer, U& item)
 	{
-		return static_cast<ExplicitProducer*>(producer.producer)->dequeue(item);
+		return static_cast<ExplicitProducer*>(producer.producer)->pop(item);
 	}
 	
 	// Attempts to dequeue several elements from a specific producer's inner queue.
@@ -1364,16 +1368,16 @@ private:
 	///////////////////////////////
 	
 	template<AllocationMode canAlloc, typename U>
-	inline bool inner_enqueue(producer_token_t const& token, U&& element)
+	inline bool inner_push(producer_token_t const& token, U&& element)
 	{
-		return static_cast<ExplicitProducer*>(token.producer)->ConcurrentQueue::ExplicitProducer::template enqueue<canAlloc>(std::forward<U>(element));
+		return static_cast<ExplicitProducer*>(token.producer)->ConcurrentQueue::ExplicitProducer::template push<canAlloc>(std::forward<U>(element));
 	}
 	
 	template<AllocationMode canAlloc, typename U>
-	inline bool inner_enqueue(U&& element)
+	inline bool inner_push(U&& element)
 	{
 		auto producer = get_or_add_implicit_producer();
-		return producer == nullptr ? false : producer->ConcurrentQueue::ImplicitProducer::template enqueue<canAlloc>(std::forward<U>(element));
+		return producer == nullptr ? false : producer->ConcurrentQueue::ImplicitProducer::template push<canAlloc>(std::forward<U>(element));
 	}
 	
 	template<AllocationMode canAlloc, typename It>
@@ -1711,13 +1715,13 @@ private:
 		virtual ~ProducerBase() { }
 		
 		template<typename U>
-		inline bool dequeue(U& element)
+		inline bool pop(U& element)
 		{
 			if (isExplicit) {
-				return static_cast<ExplicitProducer*>(this)->dequeue(element);
+				return static_cast<ExplicitProducer*>(this)->pop(element);
 			}
 			else {
-				return static_cast<ImplicitProducer*>(this)->dequeue(element);
+				return static_cast<ImplicitProducer*>(this)->pop(element);
 			}
 		}
 		
@@ -1846,7 +1850,7 @@ private:
 		}
 		
 		template<AllocationMode allocMode, typename U>
-		inline bool enqueue(U&& element)
+		inline bool push(U&& element)
 		{
 			index_t currentTailIndex = this->tailIndex.load(std::memory_order_relaxed);
 			index_t newTailIndex = 1 + currentTailIndex;
@@ -1952,7 +1956,7 @@ private:
 		}
 		
 		template<typename U>
-		bool dequeue(U& element)
+		bool pop(U& element)
 		{
 			auto tail = this->tailIndex.load(std::memory_order_relaxed);
 			auto overcommit = this->dequeueOvercommit.load(std::memory_order_relaxed);
@@ -2484,7 +2488,7 @@ private:
 		}
 		
 		template<AllocationMode allocMode, typename U>
-		inline bool enqueue(U&& element)
+		inline bool push(U&& element)
 		{
 			index_t currentTailIndex = this->tailIndex.load(std::memory_order_relaxed);
 			index_t newTailIndex = 1 + currentTailIndex;
@@ -2548,7 +2552,7 @@ private:
 		}
 		
 		template<typename U>
-		bool dequeue(U& element)
+		bool pop(U& element)
 		{
 			// See ExplicitProducer::dequeue for rationale and explanation
 			index_t tail = this->tailIndex.load(std::memory_order_relaxed);

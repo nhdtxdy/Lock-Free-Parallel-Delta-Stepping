@@ -20,6 +20,9 @@ public:
     bool empty() const override {
         return elements.empty();
     }
+    size_t size() const {
+        return elements.size();
+    }
     constexpr bool is_blocking() const override {
         return true;
     }

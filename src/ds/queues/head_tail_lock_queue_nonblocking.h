@@ -5,7 +5,7 @@
 #include <mutex>
 
 template<class E>
-class HeadTailLockQueueNonBlocking : public ThreadSafeQueueBase {
+class HeadTailLockQueueNonBlocking : public ThreadSafeQueueBase<E> {
 public:
     HeadTailLockQueueNonBlocking();
     ~HeadTailLockQueueNonBlocking();
@@ -29,18 +29,17 @@ public:
         return (head->next == nullptr);
     }
 
-private:
-    Node *head;
-    Node *tail;
-    
-    std::mutex head_lock;
-    std::mutex tail_lock;
-
 protected:
     struct Node {
         E data;
         Node *next = nullptr;
     };
+
+    Node *head;
+    Node *tail;
+    
+    std::mutex head_lock;
+    std::mutex tail_lock;
 };
 
 template<class E>

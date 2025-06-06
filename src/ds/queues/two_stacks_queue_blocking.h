@@ -4,9 +4,8 @@
 #include "two_stacks_queue.h"
 
 template<class E>
-class TwoStacksQueueBlocking : public TwoStacksQueue {
+class TwoStacksQueueBlocking : public ThreadSafeQueueBase<E> {
 public:
-    using TwoStacksQueue::TwoStacksQueue;
     void push(const E &element) {
         s1.push(element);
         is_transferring.notify_one();
@@ -36,9 +35,18 @@ public:
         }
         return false;
     }
+    bool empty() const {
+        return s2.empty() && s1.empty();
+    }
+    constexpr bool is_blocking() const {
+        return true;
+    }
     constexpr bool is_lock_free() const override {
         return true;
     }
+private:
+    LockFreeStack<E> s1, s2;
+    std::atomic<bool> is_transferring;
 };
 
 #endif

@@ -1,18 +1,16 @@
 #ifndef LOCK_FREE_QUEUE_H
-#define LOCK_FREE_QUEUE
+#define LOCK_FREE_QUEUE_H
 
 #include "thread_safe_queue_base.h"
 
 // TO STUDY: USE SHARED_PTR INSTEAD (HOW MUCH SLOWER WOULD IT BE?)
 template<class E>
-class LockFreeQueue : public ThreadSafeQueueBase {
+class LockFreeQueue : public ThreadSafeQueueBase<E> {
 public:
-    LockFreeQueue(int backoff_retries);
+    LockFreeQueue(int backoff_retries = -1);
     ~LockFreeQueue();
 
     // Move semantics
-    LockFreeQueue(LockFreeQueue &&other) noexcept;
-    LockFreeQueue& operator=(LockFreeQueue &&other) noexcept;
 
     void push(const E &value) override;
     bool pop(E &res) override;
@@ -24,7 +22,7 @@ public:
     }
 
     bool empty() const override {
-        return (head->next == nullptr);
+        return (head.load()->next.load() == nullptr);
     }
 
 private:
@@ -39,7 +37,7 @@ private:
 };
 
 template<class E>
-LockFreeQueue<E>::LockFreeQueue(int backoff_retries = -1): exponential_backoff_retries(backoff_retries) {
+LockFreeQueue<E>::LockFreeQueue(int backoff_retries): exponential_backoff_retries(backoff_retries) {
     Node *tmp = new Node;
     head = tmp;
     tail = tmp;
@@ -47,8 +45,8 @@ LockFreeQueue<E>::LockFreeQueue(int backoff_retries = -1): exponential_backoff_r
 
 template<class E>
 LockFreeQueue<E>::~LockFreeQueue() {
-    while (Node *old_head = head) {
-        head = old_head->next;
+    while (Node *old_head = head.load()) {
+        head.store(old_head->next);
         delete old_head;
     }
 }
@@ -61,9 +59,9 @@ void LockFreeQueue<E>::push(const E &value) {
 
     // Michael-Scott's (1996)
     while (true) {
-        old_tail = tail;
+        old_tail = tail.load();
         Node *tail_next = old_tail->next;
-        if (old_tail == tail) {
+        if (old_tail == tail.load()) {
             if (tail_next == nullptr) {
                 if (old_tail->next.compare_exchange_weak(tail_next, node)) {
                     break;
@@ -95,10 +93,10 @@ bool LockFreeQueue<E>::pop(E &res) {
     Node *old_head, *old_tail, *next;
     int retries = 1;
     while (true) {
-        old_head = head;
-        old_tail = tail;
+        old_head = head.load();
+        old_tail = tail.load();
         next = old_head->next;
-        if (old_head == head) {
+        if (old_head == head.load()) {
             if (old_head == old_tail) {
                 if (next == nullptr) { // queue is empty
                     if (retries < exponential_backoff_retries) {
@@ -114,7 +112,7 @@ bool LockFreeQueue<E>::pop(E &res) {
             }
             else {
                 if (head.compare_exchange_weak(old_head, next)) {
-                    res = std::move(head->next->data);
+                    res = next->data;
                     delete old_head;
                     return true;
                 }
@@ -123,35 +121,5 @@ bool LockFreeQueue<E>::pop(E &res) {
     }
 }
 
-template<class E>
-LockFreeQueue<E>::LockFreeQueue(LockFreeQueue&& other) noexcept {
-    head = other.head;
-    tail = other.tail;
-    exponential_backoff_retries = other.exponential_backoff_retries;
-    other.head = nullptr;
-    other.tail = nullptr;
-    other.exponential_backoff_retries = 0;
-}
-
-template<class E>
-LockFreeQueue<E>& LockFreeQueue<E>::operator=(LockFreeQueue&& other) noexcept {
-    if (this != &other) {
-        // Clean up current queue nodes
-        Node *node = head;
-        while (node) {
-            Node* next = node->next;
-            delete node;
-            node = next;
-        }
-
-        head = other.head;
-        tail = other.tail;
-        exponential_backoff_retries = other.exponential_backoff_retries;
-        other.head = nullptr;
-        other.tail = nullptr;
-        other.exponential_backoff_retries = 0;
-    }
-    return *this;
-}
 
 #endif

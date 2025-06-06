@@ -19,7 +19,7 @@
 namespace moodycamel
 {
 // This is a blocking version of the queue. It has an almost identical interface to
-// the normal non-blocking version, with the addition of various wait_dequeue() methods
+// the normal non-blocking version, with the addition of various wait_pop() methods
 // and the removal of producer-specific dequeue methods.
 template<typename T, typename Traits = ConcurrentQueueDefaultTraits>
 class BlockingConcurrentQueue
@@ -101,6 +101,10 @@ public:
 	{
 		swap_internal(other);
 	}
+
+	constexpr bool is_blocking() const {
+		return true;
+	}
 	
 private:
 	BlockingConcurrentQueue& swap_internal(BlockingConcurrentQueue& other)
@@ -120,9 +124,9 @@ public:
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0,
 	// or Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(T const& item)
+	inline bool push(T const& item)
 	{
-		if ((details::likely)(inner.enqueue(item))) {
+		if ((details::likely)(inner.push(item))) {
 			sema->signal();
 			return true;
 		}
@@ -134,9 +138,9 @@ public:
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0,
 	// or Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(T&& item)
+	inline bool push(T&& item)
 	{
-		if ((details::likely)(inner.enqueue(std::move(item)))) {
+		if ((details::likely)(inner.push(std::move(item)))) {
 			sema->signal();
 			return true;
 		}
@@ -147,9 +151,9 @@ public:
 	// Allocates memory if required. Only fails if memory allocation fails (or
 	// Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(producer_token_t const& token, T const& item)
+	inline bool push(producer_token_t const& token, T const& item)
 	{
-		if ((details::likely)(inner.enqueue(token, item))) {
+		if ((details::likely)(inner.push(token, item))) {
 			sema->signal();
 			return true;
 		}
@@ -160,9 +164,9 @@ public:
 	// Allocates memory if required. Only fails if memory allocation fails (or
 	// Traits::MAX_SUBQUEUE_SIZE has been defined and would be surpassed).
 	// Thread-safe.
-	inline bool enqueue(producer_token_t const& token, T&& item)
+	inline bool push(producer_token_t const& token, T&& item)
 	{
-		if ((details::likely)(inner.enqueue(token, std::move(item)))) {
+		if ((details::likely)(inner.push(token, std::move(item)))) {
 			sema->signal();
 			return true;
 		}
@@ -206,9 +210,9 @@ public:
 	// production is disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE
 	// is 0).
 	// Thread-safe.
-	inline bool try_enqueue(T const& item)
+	inline bool try_push(T const& item)
 	{
-		if (inner.try_enqueue(item)) {
+		if (inner.try_push(item)) {
 			sema->signal();
 			return true;
 		}
@@ -220,9 +224,9 @@ public:
 	// Fails if not enough room to enqueue (or implicit production is
 	// disabled because Traits::INITIAL_IMPLICIT_PRODUCER_HASH_SIZE is 0).
 	// Thread-safe.
-	inline bool try_enqueue(T&& item)
+	inline bool try_push(T&& item)
 	{
-		if (inner.try_enqueue(std::move(item))) {
+		if (inner.try_push(std::move(item))) {
 			sema->signal();
 			return true;
 		}
@@ -232,9 +236,9 @@ public:
 	// Enqueues a single item (by copying it) using an explicit producer token.
 	// Does not allocate memory. Fails if not enough room to enqueue.
 	// Thread-safe.
-	inline bool try_enqueue(producer_token_t const& token, T const& item)
+	inline bool try_push(producer_token_t const& token, T const& item)
 	{
-		if (inner.try_enqueue(token, item)) {
+		if (inner.try_push(token, item)) {
 			sema->signal();
 			return true;
 		}
@@ -244,9 +248,9 @@ public:
 	// Enqueues a single item (by moving it, if possible) using an explicit producer token.
 	// Does not allocate memory. Fails if not enough room to enqueue.
 	// Thread-safe.
-	inline bool try_enqueue(producer_token_t const& token, T&& item)
+	inline bool try_push(producer_token_t const& token, T&& item)
 	{
-		if (inner.try_enqueue(token, std::move(item))) {
+		if (inner.try_push(token, std::move(item))) {
 			sema->signal();
 			return true;
 		}
@@ -291,10 +295,10 @@ public:
 	// were checked (so, the queue is likely but not guaranteed to be empty).
 	// Never allocates. Thread-safe.
 	template<typename U>
-	inline bool try_dequeue(U& item)
+	inline bool try_pop(U& item)
 	{
 		if (sema->tryWait()) {
-			while (!inner.try_dequeue(item)) {
+			while (!inner.try_pop(item)) {
 				continue;
 			}
 			return true;
@@ -307,10 +311,10 @@ public:
 	// were checked (so, the queue is likely but not guaranteed to be empty).
 	// Never allocates. Thread-safe.
 	template<typename U>
-	inline bool try_dequeue(consumer_token_t& token, U& item)
+	inline bool try_pop(consumer_token_t& token, U& item)
 	{
 		if (sema->tryWait()) {
-			while (!inner.try_dequeue(token, item)) {
+			while (!inner.try_pop(token, item)) {
 				continue;
 			}
 			return true;
@@ -356,14 +360,15 @@ public:
 	// dequeues it.
 	// Never allocates. Thread-safe.
 	template<typename U>
-	inline void wait_dequeue(U& item)
+	inline bool pop(U& item)
 	{
 		while (!sema->wait()) {
 			continue;
 		}
-		while (!inner.try_dequeue(item)) {
+		while (!inner.try_pop(item)) {
 			continue;
 		}
+		return true;
 	}
 
 	// Blocks the current thread until either there's something to dequeue
@@ -379,7 +384,7 @@ public:
 		if (!sema->wait(timeout_usecs)) {
 			return false;
 		}
-		while (!inner.try_dequeue(item)) {
+		while (!inner.try_pop(item)) {
 			continue;
 		}
 		return true;
@@ -399,12 +404,12 @@ public:
 	// dequeues it using an explicit consumer token.
 	// Never allocates. Thread-safe.
 	template<typename U>
-	inline void wait_dequeue(consumer_token_t& token, U& item)
+	inline void pop(consumer_token_t& token, U& item)
 	{
 		while (!sema->wait()) {
 			continue;
 		}
-		while (!inner.try_dequeue(token, item)) {
+		while (!inner.try_pop(token, item)) {
 			continue;
 		}
 	}
@@ -422,7 +427,7 @@ public:
 		if (!sema->wait(timeout_usecs)) {
 			return false;
 		}
-		while (!inner.try_dequeue(token, item)) {
+		while (!inner.try_pop(token, item)) {
 			continue;
 		}
 		return true;

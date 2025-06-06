@@ -1,5 +1,5 @@
 #ifndef LOCK_FREE_STACK_H
-#define LOCK_FREE_STACK
+#define LOCK_FREE_STACK_H
 
 #include "thread_safe_stack_base.h"
 #include <atomic>
@@ -23,11 +23,14 @@ public:
         }
         return false;
     }
-    bool empty() const {
+    bool empty() const override {
         return (head == nullptr);
     }
-    constexpr bool is_blocking() const {
+    constexpr bool is_blocking() const override {
         return false;
+    }
+    constexpr bool is_lock_free() const override {
+        return true;
     }
 private:
     struct Node {
