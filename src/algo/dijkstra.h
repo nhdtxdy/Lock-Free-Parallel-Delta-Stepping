@@ -7,6 +7,10 @@
 
 class Dijkstra : public ShortestPathSolverBase {
 public:
+    const std::string name() const override {
+        return "Dijkstra algorithm";
+    }
+
     std::vector<double> compute(const Graph &graph, int source) const override {
         std::priority_queue<std::pair<double, int>> pq;
         int n = graph.size();

@@ -8,6 +8,7 @@ class ShortestPathSolverBase {
 public:
     virtual ~ShortestPathSolverBase() = default;
     virtual std::vector<double> compute(const Graph &graph, int source) const = 0;
+    virtual const std::string name() const = 0;
 };
 
 #endif
