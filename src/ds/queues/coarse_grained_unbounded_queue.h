@@ -16,6 +16,7 @@ public:
     CoarseGrainedUnboundedQueue& operator=(CoarseGrainedUnboundedQueue &&other) noexcept;
 
     void push(const E& element) override;
+    void push(E &&element);
     bool pop (E &res) override;
     bool empty() const override {
         return elements.empty();
@@ -23,11 +24,8 @@ public:
     size_t size() const {
         return elements.size();
     }
-    constexpr bool is_blocking() const override {
+    static constexpr bool is_blocking() {
         return true;
-    }
-    constexpr bool is_lock_free() const override {
-        return false;
     }
 private:
     std::queue<E> elements;
@@ -39,6 +37,14 @@ template <class E>
 void CoarseGrainedUnboundedQueue<E>::push(const E& element) {
     std::lock_guard<std::mutex> lk(lock);
     elements.push(element);
+    not_empty.notify_one();
+    return;
+}
+
+template <class E>
+void CoarseGrainedUnboundedQueue<E>::push(E &&element) {
+    std::lock_guard<std::mutex> lk(lock);
+    elements.push(std::move(element));
     not_empty.notify_one();
     return;
 }

@@ -12,6 +12,14 @@ public:
         new_node->data = element;
         new_node->next = head;
         while (!head.compare_exchange_weak(new_node->next, new_node));
+        _size.fetch_add(1);
+    }
+    void push(E &&element) {
+        Node *new_node = new Node;
+        new_node->data = std::move(element);
+        new_node->next = head;
+        while (!head.compare_exchange_weak(new_node->next, new_node));
+        _size.fetch_add(1);
     }
     bool pop(E &res) override {
         Node *old_head = head;
@@ -19,6 +27,7 @@ public:
         if (old_head != nullptr) {
             res = old_head->data;
             delete old_head;
+            _size.fetch_sub(1);
             return true;
         }
         return false;
@@ -32,6 +41,11 @@ public:
     constexpr bool is_lock_free() const override {
         return true;
     }
+
+    size_t size() const {
+        return _size;
+    }
+
 private:
     struct Node {
         E data;
@@ -39,6 +53,7 @@ private:
     };
 
     std::atomic<Node*> head{nullptr};
+    std::atomic<size_t> _size{0};
 };
 
 #endif

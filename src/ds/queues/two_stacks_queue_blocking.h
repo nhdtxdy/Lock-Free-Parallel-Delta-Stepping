@@ -10,6 +10,10 @@ public:
         s1.push(element);
         is_transferring.notify_one();
     }
+    void push(E &&element) {
+        s1.push(std::move(element));
+        is_transferring.notify_one();
+    }
     bool pop(E &res) {
         while (true) {
             if (s2.pop(res)) {

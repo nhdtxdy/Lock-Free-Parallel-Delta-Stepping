@@ -102,7 +102,7 @@ public:
 		swap_internal(other);
 	}
 
-	constexpr bool is_blocking() const {
+	static constexpr bool is_blocking() {
 		return true;
 	}
 	

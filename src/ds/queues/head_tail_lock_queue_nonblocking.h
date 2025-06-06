@@ -15,13 +15,10 @@ public:
     HeadTailLockQueueNonBlocking& operator=(HeadTailLockQueueNonBlocking &&other) noexcept;
 
     void push(const E &element) override;
+    void push(E &&element);
     bool pop(E &res) override;
 
-    constexpr bool is_blocking() const override {
-        return false;
-    }
-
-    constexpr bool is_lock_free() const override {
+    static constexpr bool is_blocking() {
         return false;
     }
 
@@ -61,6 +58,17 @@ template<class E>
 void HeadTailLockQueueNonBlocking<E>::push(const E &element) {
     Node *node = new Node;
     node->data = element;
+    {
+        std::lock_guard<std::mutex> lk(tail_lock);
+        tail->next = node;
+        tail = node;
+    }
+}
+
+template<class E>
+void HeadTailLockQueueNonBlocking<E>::push(E &&element) {
+    Node *node = new Node;
+    node->data = std::move(element);
     {
         std::lock_guard<std::mutex> lk(tail_lock);
         tail->next = node;

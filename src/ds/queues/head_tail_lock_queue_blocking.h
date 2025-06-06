@@ -14,11 +14,8 @@ public:
     using HeadTailLockQueueNonBlocking<E>::HeadTailLockQueueNonBlocking;
     void push(const E &element) override;
     bool pop(E &res) override;
-    constexpr bool is_blocking() const override {
+    static constexpr bool is_blocking() {
         return true;
-    }
-    constexpr bool is_lock_free() const override {
-        return false;
     }
 private:
     std::condition_variable not_empty;

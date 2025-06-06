@@ -12,6 +12,9 @@ public:
     void push(const E &element) {
         s1.push(element);
     }
+    void push(E &&element) {
+        s1.push(std::move(element));
+    }
     bool pop(E &res) {
         if (s2.pop(res)) {
             return true;
@@ -30,11 +33,8 @@ public:
     bool empty() const {
         return s2.empty() && s1.empty();
     }
-    constexpr bool is_blocking() const {
+    static constexpr bool is_blocking() {
         return false;
-    }
-    constexpr bool is_lock_free() const override {
-        return true;
     }
 private:
     LockFreeStack<E> s1, s2;
