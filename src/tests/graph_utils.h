@@ -7,7 +7,58 @@
 #include <set>
 #include <algorithm>
 #include <queue>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 #include "graph.h"
+
+void save_graph_to_file(const Graph& graph, const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing." << std::endl;
+        return;
+    }
+    
+    // Set large buffer size for faster I/O (64MB)
+    const size_t buffer_size = 64 * 1024 * 1024;
+    std::vector<char> buffer(buffer_size);
+    file.rdbuf()->pubsetbuf(buffer.data(), buffer_size);
+    
+    // Disable synchronization with C stdio for faster output
+    std::ios_base::sync_with_stdio(false);
+    
+    // Use string batching for better performance
+    std::ostringstream batch;
+    
+    int edge_count = 0;
+    int batch_count = 0;
+    const int batch_size = 50000; // Write every 50K edges
+    
+    for (int u = 0; u < graph.size(); u++) {
+        for (const auto& [v, w] : graph[u]) {
+            // Use faster formatting (space instead of " ", '\n' instead of endl)
+            batch << u << ' ' << v << ' ' << w << '\n';
+            edge_count++;
+            batch_count++;
+            
+            // Flush batch to file periodically to avoid memory issues
+            if (batch_count >= batch_size) {
+                file << batch.str();
+                batch.str(""); // Clear the stringstream
+                batch.clear();
+                batch_count = 0;
+            }
+        }
+    }
+    
+    // Write remaining edges
+    if (batch_count > 0) {
+        file << batch.str();
+    }
+    
+    file.close();
+    std::cout << "Graph saved to: " << filename << " (" << edge_count << " edges)" << std::endl;
+}
 
 // Hash function for pair<int, int>
 namespace std {
@@ -105,7 +156,7 @@ Graph generate_random_graph(int n, int m, double min_weight = 0.0, double max_we
     std::set<std::pair<int, int>> edge_set; // To avoid duplicate edges
     
     int attempts = 0;
-    while (edges.size() < m && attempts < m * 100) { // Prevent infinite loop
+    while ((int)edges.size() < m && attempts < m * 100) { // Prevent infinite loop
         int u = vertex_dist(gen);
         int v = vertex_dist(gen);
         if (u != v && edge_set.find({u, v}) == edge_set.end()) {
@@ -134,7 +185,7 @@ Graph generate_large_random_graph(int n, int m, double min_weight = 0., double m
     std::unordered_set<std::pair<int, int>, std::hash<std::pair<int, int>>> edge_set;
     
     int attempts = 0;
-    while (edges.size() < m && attempts < m * 50) {
+    while ((int)edges.size() < m && attempts < m * 50) {
         int u = vertex_dist(gen);
         int v = vertex_dist(gen);
         if (u != v && edge_set.find({u, v}) == edge_set.end()) {
@@ -223,8 +274,8 @@ Graph generate_scale_free_graph(int n, int m, double gamma = 2.5, double min_wei
         }
         
         // Add additional edges using preferential attachment
-        for (int attempt = 0; attempt < edges_to_add * 3 && connected.size() < edges_to_add; attempt++) {
-            for (int i = 0; i < new_vertex && connected.size() < edges_to_add; i++) {
+        for (int attempt = 0; attempt < edges_to_add * 3 && (int)connected.size() < edges_to_add; attempt++) {
+            for (int i = 0; i < new_vertex && (int)connected.size() < edges_to_add; i++) {
                 if (connected.count(i) == 0) {
                     double prob = (degrees[i] + 1.0) / (total_degree + new_vertex);
                     if (prob_dist(gen) < prob) {

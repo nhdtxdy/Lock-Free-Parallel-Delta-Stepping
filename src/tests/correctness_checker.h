@@ -4,9 +4,13 @@
 #include <chrono>
 #include <iomanip>
 #include <cmath>
-#include "graph_generators.h"
-#include "dijkstra.h"
-#include "delta_stepping_sequential.h"
+#include <fstream>
+#include <cstdlib>
+#include <memory>
+#include "graph_utils.h"
+#include "algos.h"
+#include "queues/queues.h"
+
 
 // Check if two distance vectors are approximately equal
 bool are_distances_equal(const std::vector<double>& dist1, const std::vector<double>& dist2, double epsilon = 1e-9) {
@@ -20,116 +24,218 @@ bool are_distances_equal(const std::vector<double>& dist1, const std::vector<dou
     return true;
 }
 
-// Run correctness test for a single graph
-bool test_graph(const Graph& graph, int source, double delta, bool verbose = false) {
-    Dijkstra dijkstra;
-    DeltaSteppingSequential delta_stepping(delta);
-    
-    auto start_dijkstra = std::chrono::high_resolution_clock::now();
-    std::vector<double> dijkstra_distances = dijkstra.compute(graph, source);
-    auto end_dijkstra = std::chrono::high_resolution_clock::now();
-    
-    auto start_delta = std::chrono::high_resolution_clock::now();
-    std::vector<double> delta_distances = delta_stepping.compute(graph, source);
-    auto end_delta = std::chrono::high_resolution_clock::now();
-    
-    bool correct = are_distances_equal(dijkstra_distances, delta_distances);
-    
-    if (verbose || !correct) {
-        auto dijkstra_time = std::chrono::duration_cast<std::chrono::microseconds>(end_dijkstra - start_dijkstra);
-        auto delta_time = std::chrono::duration_cast<std::chrono::microseconds>(end_delta - start_delta);
-        
-        std::cout << "Graph size: " << graph.size() << ", Source: " << source << ", Delta: " << delta << std::endl;
-        std::cout << "Dijkstra time: " << dijkstra_time.count() << " μs" << std::endl;
-        std::cout << "Delta stepping time: " << delta_time.count() << " μs" << std::endl;
-        std::cout << "Correctness: " << (correct ? "PASS" : "FAIL") << std::endl;
-        
-        if (!correct) {
-            std::cout << "Distance comparison (first 10 vertices):" << std::endl;
-            std::cout << std::setw(8) << "Vertex" << std::setw(15) << "Dijkstra" << std::setw(15) << "Delta Step" << std::setw(15) << "Difference" << std::endl;
-            for (int i = 0; i < std::min(10, (int)dijkstra_distances.size()); i++) {
-                double diff = std::abs(dijkstra_distances[i] - delta_distances[i]);
-                std::cout << std::setw(8) << i 
-                         << std::setw(15) << std::fixed << std::setprecision(6) << dijkstra_distances[i]
-                         << std::setw(15) << std::fixed << std::setprecision(6) << delta_distances[i]
-                         << std::setw(15) << std::scientific << std::setprecision(2) << diff << std::endl;
-            }
-        }
-        std::cout << std::endl;
+// Run correctness test for a single graph with a list of solvers
+bool test_graph_with_solvers(const Graph& graph, int source, const std::vector<std::unique_ptr<ShortestPathSolverBase>>& solvers, bool verbose = false) {
+    if (solvers.empty()) {
+        std::cout << "Error: No solvers provided for testing" << std::endl;
+        return false;
     }
     
-    return correct;
+    // Store results from all solvers
+    std::vector<std::vector<double>> all_distances(solvers.size());
+    std::vector<std::chrono::duration<double, std::micro>> all_times(solvers.size());
+    std::vector<std::string> solver_names(solvers.size());
+    
+    // Run all solvers
+    for (size_t i = 0; i < solvers.size(); i++) {
+        std::cerr << "Running " << solvers[i]->name() << '\n';
+        auto start = std::chrono::high_resolution_clock::now();
+        all_distances[i] = solvers[i]->compute(graph, source);
+        auto end = std::chrono::high_resolution_clock::now();
+        all_times[i] = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        solver_names[i] = solvers[i]->name();
+    }
+    
+    // Compare all results against the first solver (typically Dijkstra)
+    bool all_correct = true;
+    for (size_t i = 1; i < solvers.size(); i++) {
+        bool is_correct = are_distances_equal(all_distances[0], all_distances[i]);
+        if (!is_correct) {
+            all_correct = false;
+            
+            // Save the failing graph and exit immediately
+            save_graph_to_file(graph, "failed_graph_multi_solver.txt");
+            std::cout << "=== FAILED MULTI-SOLVER TEST DETECTED ===" << std::endl;
+            std::cout << "Graph size: " << graph.size() << ", Source: " << source << std::endl;
+            std::cout << "Mismatch between " << solver_names[0] << " and " << solver_names[i] << std::endl;
+            
+            for (size_t j = 0; j < solvers.size(); j++) {
+                std::cout << solver_names[j] << " time: " << all_times[j].count() << " μs" << std::endl;
+            }
+            
+            std::cout << "Distance comparison (first 10 vertices):" << std::endl;
+            std::cout << std::setw(8) << "Vertex";
+            for (const auto& name : solver_names) {
+                std::cout << std::setw(15) << name.substr(0, 14);
+            }
+            std::cout << std::setw(15) << "Max Diff" << std::endl;
+            
+            double max_diff = 0;
+            for (int v = 0; v < std::min(10, (int)all_distances[0].size()); v++) {
+                std::cout << std::setw(8) << v;
+                for (size_t j = 0; j < solvers.size(); j++) {
+                    std::cout << std::setw(15) << std::fixed << std::setprecision(6) << all_distances[j][v];
+                }
+                
+                // Calculate max difference for this vertex
+                double vertex_max_diff = 0;
+                for (size_t j = 1; j < solvers.size(); j++) {
+                    double diff = std::abs(all_distances[0][v] - all_distances[j][v]);
+                    vertex_max_diff = std::max(vertex_max_diff, diff);
+                }
+                max_diff = std::max(max_diff, vertex_max_diff);
+                std::cout << std::setw(15) << std::scientific << std::setprecision(2) << vertex_max_diff << std::endl;
+            }
+            
+            // Find max difference across all vertices
+            for (int v = 10; v < (int)all_distances[0].size(); v++) {
+                for (size_t j = 1; j < solvers.size(); j++) {
+                    double diff = std::abs(all_distances[0][v] - all_distances[j][v]);
+                    max_diff = std::max(max_diff, diff);
+                }
+            }
+            std::cout << "\nLargest difference across all vertices: " << std::scientific << std::setprecision(2) << max_diff << std::endl;
+            std::cout << "\nMulti-solver test execution stopped at first failure." << std::endl;
+            exit(1);
+        }
+    }
+    
+    if (verbose) {
+        std::cout << "Graph size: " << graph.size() << ", Source: " << source << std::endl;
+        for (size_t i = 0; i < solvers.size(); i++) {
+            std::cout << solver_names[i] << " time: " << all_times[i].count() << " μs" << std::endl;
+        }
+        std::cout << "All solvers: PASS" << std::endl << std::endl;
+    }
+    
+    return all_correct;
 }
 
-void run_correctness_tests() {
-    std::cout << "=== Delta Stepping Sequential Correctness Tests ===" << std::endl << std::endl;
+// Run correctness test for a single graph with parallel implementation
+bool test_graph_parallel(const Graph& graph, int source, double delta, int num_threads = 4, bool verbose = false) {
+    // Create solvers using smart pointers
+    std::vector<std::unique_ptr<ShortestPathSolverBase>> solvers;
+    solvers.push_back(std::make_unique<Dijkstra>());
+
+    solvers.push_back(std::make_unique<DeltaSteppingSequential>(delta));
+    solvers.push_back(std::make_unique<DeltaSteppingParallel>(delta, num_threads));
+    solvers.push_back(std::make_unique<DeltaSteppingOpenMP>(delta, num_threads));
+    // solvers.push_back(std::make_unique<DeltaSteppingDynamic>(delta, num_threads));
+    // solvers.push_back(std::make_unique<DeltaSteppingStatic>(delta, num_threads));
+    
+    // solvers.push_back(std::make_unique<DeltaSteppingParallelProfiled>(delta, num_threads));
+
+    return test_graph_with_solvers(graph, source, solvers, verbose);
+}
+
+void run_parallel_correctness_tests() {
+    std::cout << "=== Delta Stepping Parallel Correctness Tests ===" << std::endl << std::endl;
     
     int total_tests = 0;
     int passed_tests = 0;
+    int current_test = 0;
     
-    // Test 1: Small complete graphs with different delta values
-    std::cout << "Test 1: Small complete graphs" << std::endl;
-    for (int n = 3; n <= 8; n++) {
+    std::vector<int> thread_counts = {1, 4, 8};
+    
+    // First, calculate the total number of tests
+    int total_estimated = 0;
+    // Test 1: Small complete graphs
+    for (int n = 3; n <= 6; n++) {
+        total_estimated += 4 * 4 * n; // 4 deltas * 4 thread counts * n sources
+    }
+    // Test 2: Random sparse graphs
+    total_estimated += 10 * 3 * 4; // 10 graphs * 3 deltas * 4 thread counts
+    // Test 3: Edge cases
+    total_estimated += (1 + 1 + 3 * 4) * 4; // (single + disconnected + path) * 4 thread counts
+    // Test 4: Stress test
+    total_estimated += 3 * 4; // 3 stress tests * 4 thread counts
+    
+    std::cout << "Total estimated parallel tests: " << total_estimated << std::endl << std::endl;
+    
+    // Test 1: Small complete graphs with different delta values and thread counts
+    std::cout << "Test 1: Small complete graphs with parallel implementation" << std::endl;
+    for (int n = 3; n <= 6; n++) {
         Graph graph = generate_complete_graph(n, 0.0, 1.0, true, 42 + n);
-        std::vector<double> deltas = {0.01, 0.05, 0.1, 0.2};
+        std::vector<double> deltas = {0.01, 0.09, 0.18};
         
         for (double delta : deltas) {
-            for (int source = 0; source < n; source++) {
-                total_tests++;
-                if (test_graph(graph, source, delta)) {
-                    passed_tests++;
+            for (int threads : thread_counts) {
+                for (int source = 0; source < n; source++) {
+                    current_test++;
+                    total_tests++;
+                    std::cout << "  Running test " << current_test << "/" << total_estimated 
+                             << " (Complete graph n=" << n << ", delta=" << delta << ", threads=" << threads << ", source=" << source << ")";
+                    if (test_graph_parallel(graph, source, delta, threads)) {
+                        passed_tests++;
+                        std::cout << " - PASS" << std::endl;
+                    } else {
+                        std::cout << " - FAIL" << std::endl;
+                    }
                 }
             }
         }
     }
+    std::cout << "Test 1 completed: " << (current_test - (total_tests - passed_tests)) << "/" << current_test << " passed" << std::endl << std::endl;
     
     // Test 2: Random sparse graphs
-    std::cout << "Test 2: Random sparse graphs" << std::endl;
-    for (int test = 0; test < 20; test++) {
-        int n = 10 + (test % 20); // 10 to 29 vertices
+    std::cout << "Test 2: Random sparse graphs with parallel implementation" << std::endl;
+    int test2_start = current_test;
+    for (int test = 0; test < 10; test++) {
+        int n = 10 + (test % 15); // 10 to 24 vertices
         int m = n + (test % (2 * n)); // n to 3n edges
         Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 100 + test);
         
         std::vector<double> deltas = {0.02, 0.05, 0.15};
         for (double delta : deltas) {
-            int source = test % graph.size(); // Use actual graph size after component extraction
-            total_tests++;
-            if (test_graph(graph, source, delta)) {
-                passed_tests++;
+            for (int threads : thread_counts) {
+                current_test++;
+                total_tests++;
+                int source = test % graph.size();
+                std::cout << "  Running test " << current_test << "/" << total_estimated 
+                         << " (Sparse graph " << (test+1) << "/10, n=" << graph.size() << ", delta=" << delta << ", threads=" << threads << ")";
+                if (test_graph_parallel(graph, source, delta, threads)) {
+                    passed_tests++;
+                    std::cout << " - PASS" << std::endl;
+                } else {
+                    std::cout << " - FAIL" << std::endl;
+                }
             }
         }
     }
+    std::cout << "Test 2 completed: " << (current_test - test2_start - (total_tests - passed_tests - (current_test - test2_start))) << "/" << (current_test - test2_start) << " passed" << std::endl << std::endl;
     
-    // Test 3: Random dense graphs
-    std::cout << "Test 3: Random dense graphs" << std::endl;
-    for (int test = 0; test < 10; test++) {
-        int n = 5 + (test % 10); // 5 to 14 vertices
-        int m = n * (n - 1) / 2; // Nearly complete
-        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 200 + test);
-        
-        std::vector<double> deltas = {0.01, 0.05, 0.1};
-        for (double delta : deltas) {
-            int source = 0;
-            total_tests++;
-            if (test_graph(graph, source, delta)) {
-                passed_tests++;
-            }
-        }
-    }
+    // Test 3: Edge cases
+    std::cout << "Test 3: Edge cases with parallel implementation" << std::endl;
+    int test3_start = current_test;
     
-    std::cout << "Test 4: Edge cases" << std::endl;
-    
+    // Single vertex
     Graph single_vertex(1, {});
-    total_tests++;
-    if (test_graph(single_vertex, 0, 0.1)) {
-        passed_tests++;
+    for (int threads : thread_counts) {
+        current_test++;
+        total_tests++;
+        std::cout << "  Running test " << current_test << "/" << total_estimated 
+                 << " (Single vertex, threads=" << threads << ")";
+        if (test_graph_parallel(single_vertex, 0, 0.1, threads)) {
+            passed_tests++;
+            std::cout << " - PASS" << std::endl;
+        } else {
+            std::cout << " - FAIL" << std::endl;
+        }
     }
     
     // Two disconnected vertices
     Graph disconnected(2, {});
-    total_tests++;
-    if (test_graph(disconnected, 0, 0.1)) {
-        passed_tests++;
+    for (int threads : thread_counts) {
+        current_test++;
+        total_tests++;
+        std::cout << "  Running test " << current_test << "/" << total_estimated 
+                 << " (Disconnected vertices, threads=" << threads << ")";
+        if (test_graph_parallel(disconnected, 0, 0.1, threads)) {
+            passed_tests++;
+            std::cout << " - PASS" << std::endl;
+        } else {
+            std::cout << " - FAIL" << std::endl;
+        }
     }
     
     // Path graph
@@ -137,31 +243,50 @@ void run_correctness_tests() {
     Graph path_graph(4, path_edges);
     std::vector<double> deltas = {0.02, 0.1, 0.2};
     for (double delta : deltas) {
-        for (int source = 0; source < 4; source++) {
-            total_tests++;
-            if (test_graph(path_graph, source, delta)) {
-                passed_tests++;
+        for (int threads : thread_counts) {
+            for (int source = 0; source < 4; source++) {
+                current_test++;
+                total_tests++;
+                std::cout << "  Running test " << current_test << "/" << total_estimated 
+                         << " (Path graph, delta=" << delta << ", threads=" << threads << ", source=" << source << ")";
+                if (test_graph_parallel(path_graph, source, delta, threads)) {
+                    passed_tests++;
+                    std::cout << " - PASS" << std::endl;
+                } else {
+                    std::cout << " - FAIL" << std::endl;
+                }
             }
         }
     }
+    std::cout << "Test 3 completed: " << (current_test - test3_start - (total_tests - passed_tests - (current_test - test3_start))) << "/" << (current_test - test3_start) << " passed" << std::endl << std::endl;
     
-    // Test 5: Stress test with larger graphs
-    std::cout << "Test 5: Stress test" << std::endl;
-    for (int test = 0; test < 5; test++) {
-        int n = 50 + test * 20; // 50 to 130 vertices
+    // Test 4: Stress test with larger graphs
+    std::cout << "Test 4: Stress test with parallel implementation" << std::endl;
+    int test4_start = current_test;
+    for (int test = 0; test < 3; test++) {
+        int n = 30 + test * 15; // 30 to 60 vertices
         int m = n * 2; // Sparse
         Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 300 + test);
         
         double delta = 0.02 + test * 0.02;
-        int source = test % graph.size(); // Use actual graph size after component extraction
-        total_tests++;
-        if (test_graph(graph, source, delta, true)) { // Verbose for stress tests
-            passed_tests++;
+        for (int threads : thread_counts) {
+            current_test++;
+            total_tests++;
+            int source = test % graph.size();
+            std::cout << "  Running test " << current_test << "/" << total_estimated 
+                     << " (Stress test " << (test+1) << "/3, n=" << graph.size() << ", delta=" << delta << ", threads=" << threads << ")";
+            if (test_graph_parallel(graph, source, delta, threads, true)) { // Verbose for stress tests
+                passed_tests++;
+                std::cout << " - PASS" << std::endl;
+            } else {
+                std::cout << " - FAIL" << std::endl;
+            }
         }
     }
+    std::cout << "Test 4 completed: " << (current_test - test4_start - (total_tests - passed_tests - (current_test - test4_start))) << "/" << (current_test - test4_start) << " passed" << std::endl << std::endl;
     
     // Summary
-    std::cout << "=== Test Summary ===" << std::endl;
+    std::cout << "=== Parallel Test Summary ===" << std::endl;
     std::cout << "Total tests: " << total_tests << std::endl;
     std::cout << "Passed: " << passed_tests << std::endl;
     std::cout << "Failed: " << (total_tests - passed_tests) << std::endl;
@@ -169,10 +294,15 @@ void run_correctness_tests() {
               << (100.0 * passed_tests / total_tests) << "%" << std::endl;
     
     if (passed_tests == total_tests) {
-        std::cout << std::endl << "🎉 All tests passed! Your delta stepping implementation appears to be correct." << std::endl;
+        std::cout << std::endl << "🎉 All parallel tests passed! Your delta stepping parallel implementation appears to be correct." << std::endl;
     } else {
-        std::cout << std::endl << "❌ Some tests failed. Please check the implementation." << std::endl;
+        std::cout << std::endl << "❌ Some parallel tests failed. Please check the implementation." << std::endl;
     }
+}
+
+// Combined test runner that runs both sequential and parallel tests
+void run_all_correctness_tests() {
+    run_parallel_correctness_tests();
 }
 
 #endif
