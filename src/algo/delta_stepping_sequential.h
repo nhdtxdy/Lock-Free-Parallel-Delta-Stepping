@@ -9,6 +9,10 @@ class DeltaSteppingSequential : public ShortestPathSolverBase {
 public:
     DeltaSteppingSequential(double delta): delta(delta) {}
 
+    const std::string name() const override {
+        return "Sequential Delta-stepping";
+    }
+
     std::vector<double> compute(const Graph &graph, int source) const override {
         const double INF_MAX = std::numeric_limits<double>::infinity();
         int n = graph.size();
