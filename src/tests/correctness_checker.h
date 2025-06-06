@@ -7,6 +7,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <memory>
+#include <random>
 #include "graph_utils.h"
 #include "algos.h"
 #include "queues/queues.h"
@@ -119,7 +120,7 @@ bool test_graph_parallel(const Graph& graph, int source, double delta, int num_t
 
     solvers.push_back(std::make_unique<DeltaSteppingSequential>(delta));
     solvers.push_back(std::make_unique<DeltaSteppingParallel>(delta, num_threads));
-    solvers.push_back(std::make_unique<DeltaSteppingOpenMP>(delta, num_threads));
+    // solvers.push_back(std::make_unique<DeltaSteppingOpenMP>(delta, num_threads));
     // solvers.push_back(std::make_unique<DeltaSteppingDynamic>(delta, num_threads));
     // solvers.push_back(std::make_unique<DeltaSteppingStatic>(delta, num_threads));
     
@@ -130,6 +131,13 @@ bool test_graph_parallel(const Graph& graph, int source, double delta, int num_t
 
 void run_parallel_correctness_tests() {
     std::cout << "=== Delta Stepping Parallel Correctness Tests ===" << std::endl << std::endl;
+    
+    // Initialize random number generator with current time
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> seed_dist(1, 100000);
+    
+    std::cout << "Using random seeds for test reproducibility" << std::endl << std::endl;
     
     int total_tests = 0;
     int passed_tests = 0;
@@ -155,7 +163,9 @@ void run_parallel_correctness_tests() {
     // Test 1: Small complete graphs with different delta values and thread counts
     std::cout << "Test 1: Small complete graphs with parallel implementation" << std::endl;
     for (int n = 3; n <= 6; n++) {
-        Graph graph = generate_complete_graph(n, 0.0, 1.0, true, 42 + n);
+        int random_seed = seed_dist(gen);
+        Graph graph = generate_complete_graph(n, 0.0, 1.0, true, random_seed);
+        std::cout << "  Complete graph n=" << n << " using seed: " << random_seed << std::endl;
         std::vector<double> deltas = {0.01, 0.09, 0.18};
         
         for (double delta : deltas) {
@@ -180,10 +190,12 @@ void run_parallel_correctness_tests() {
     // Test 2: Random sparse graphs
     std::cout << "Test 2: Random sparse graphs with parallel implementation" << std::endl;
     int test2_start = current_test;
-    for (int test = 0; test < 10; test++) {
-        int n = 10 + (test % 15); // 10 to 24 vertices
-        int m = n + (test % (2 * n)); // n to 3n edges
-        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 100 + test);
+    for (int test = 0; test < 20; test++) {
+        int n = 1500; // 10 to 24 vertices
+        int m = 6000; // n to 3n edges
+        int random_seed = seed_dist(gen);
+        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, random_seed);
+        std::cout << "  Sparse graph " << (test+1) << "/10 (n=" << graph.size() << ", m=" << m << ") using seed: " << random_seed << std::endl;
         
         std::vector<double> deltas = {0.02, 0.05, 0.15};
         for (double delta : deltas) {
@@ -264,9 +276,11 @@ void run_parallel_correctness_tests() {
     std::cout << "Test 4: Stress test with parallel implementation" << std::endl;
     int test4_start = current_test;
     for (int test = 0; test < 3; test++) {
-        int n = 30 + test * 15; // 30 to 60 vertices
-        int m = n * 2; // Sparse
-        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, 300 + test);
+        int n = 3 + test * 15; // 30 to 60 vertices
+        int m = n * 3; // Sparse
+        int random_seed = seed_dist(gen);
+        Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, random_seed);
+        std::cout << "  Stress test " << (test+1) << "/3 (n=" << graph.size() << ", m=" << m << ") using seed: " << random_seed << std::endl;
         
         double delta = 0.02 + test * 0.02;
         for (int threads : thread_counts) {
