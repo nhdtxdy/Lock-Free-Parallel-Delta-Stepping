@@ -71,12 +71,15 @@ public:
         std::mutex buckets_resize_mutex;  // Add mutex for resize protection
         buckets[0].insert(idx_to_addr[source]);
         dist[source] = 0;
-        std::vector<Request> Rl, Rh;
-        // LockFreeStack<Request> Rl, Rh;
-        std::mutex Rl_lock, Rh_lock;
-        std::unordered_map<int, int> Rl_map, Rh_map;
 
-        // std::vector<std::atomic<LockFreeStack
+        LockFreeStack<int> light_nodes_requested, heavy_nodes_requested;
+
+        std::vector<std::atomic<Request*>> light_request_map(n), heavy_request_map(n);
+        
+        for (int i = 0; i < n; ++i) {
+            light_request_map[i].store(nullptr);
+            heavy_request_map[i].store(nullptr);
+        }
 
         // positions is vector of atomic to node to Rl, Rh
         // Rl, Rh are lock-free stack
@@ -90,10 +93,18 @@ public:
         
         std::mutex lock_ngu;
 
-        auto relax = [&] (const Request &request) {
-            int u = request.u;
-            int v = request.v;
-            double w = request.w;
+        auto relax = [&] (int request_node, std::vector<std::atomic<Request*>> &requests) {
+            Request* request_ptr = requests[request_node].exchange(nullptr);
+            if (request_ptr == nullptr) return; // Already processed
+
+            int u = request_ptr->u;
+            int v = request_ptr->v;
+            double w = request_ptr->w;
+
+            delete request_ptr;
+
+            // note: during light edge relaxation, multiple readers - one writer can happen
+            // but that is fine, because the next epoch will take care of this concurrency issue
             if (dist[u] + w < dist[v]) {
                 int old_bucket = get_bucket(v);
                 dist[v] = dist[u] + w;
@@ -114,26 +125,35 @@ public:
             }
         };
 
-        // Strictest request optimization
-        auto add_request = [&] (std::vector<Request> &requests, std::unordered_map<int, int> &positions, std::mutex &mtx, const Request &request) {
-            std::lock_guard<std::mutex> lk(mtx);
-            if (!positions.count(request.v)) {
-                positions[request.v] = requests.size();
-                requests.emplace_back(request);
-            }
-            else {
-                int idx = positions[request.v];
-                Request &existing = requests[idx];
-                if (dist[request.u] + request.w < dist[existing.u] + existing.w) {
-                    existing = request;
+        // Strictest request optimization -- No mutexes
+        auto add_request = [&] (LockFreeStack<int> &requested_nodes, std::vector<std::atomic<Request*>> &requests, const Request &request) {
+            std::atomic<Request*> &state = requests[request.v];
+            double new_distance = dist[request.u] + request.w;
+
+            Request *new_request = new Request(request);            
+            if (state.load() == nullptr) {
+                Request *curr_state = state.load();
+                while (curr_state == nullptr && !state.compare_exchange_weak(curr_state, new_request));
+                if (curr_state == nullptr) {
+                    requested_nodes.push(request.v);
                 }
             }
+
+            Request *current = state.load();
+            while (current && new_distance < dist[current->u] + current->w) {
+                if (state.compare_exchange_weak(current, new_request)) {
+                    // delete current;
+                    return;
+                }
+            }
+
+            // delete new_request; // if we reach this point, the new request is not better --> simply delete
         };
 
         auto gen_light_request = [&] (int u) {
             for (const auto &[v, w] : light[u]) {
                 if (dist[u] + w < dist[v]) {
-                    add_request(Rl, Rl_map, Rl_lock, Request{u, v, w});
+                    add_request(light_nodes_requested, light_request_map, Request{u, v, w});
                 }
             }
         };
@@ -141,7 +161,7 @@ public:
         auto gen_heavy_request = [&] (int u) {
             for (const auto &[v, w] : heavy[u]) {
                 if (dist[u] + w < dist[v]) {
-                    add_request(Rh, Rh_map, Rh_lock, Request{u, v, w});
+                    add_request(heavy_nodes_requested, heavy_request_map, Request{u, v, w});
                 }
             }
         };
@@ -156,9 +176,6 @@ public:
 
             for (int i = 0; i < (int)buckets.size(); ++i) {
                 while (!buckets[i].empty()) {
-                    Rl.clear();
-                    Rl_map.clear();
-
                     // Loop 1: request generation
                     std::vector<int> curr_bucket = buckets[i].list_all_and_clear();
                     // std::cerr << "bucket: " << i << '\n';
@@ -194,7 +211,7 @@ public:
                     // Loop 2: relax light edges
                     {
                         pool.start();
-                        int requests_size = Rl.size();
+                        int requests_size = light_nodes_requested.size();
                         int chunk_size = (requests_size + num_threads - 1) / num_threads;
                         for (int idx = 0; idx < num_threads; ++idx) {
                             int start = idx * chunk_size;
@@ -204,8 +221,11 @@ public:
                             }
                             pool.push([&, start, end] {
                                 for (int idx_r = start; idx_r < end; ++idx_r) {
-                                    const Request &request = Rl[idx_r];
-                                    relax(request);
+                                    int request_node;
+                                    if (!light_nodes_requested.pop(request_node)) {
+                                        std::cerr << "[FATAL] STACK NOT WORKING PROPERLY";
+                                    }
+                                    relax(request_node, light_request_map);
                                 }
                             });
                         }
@@ -216,7 +236,7 @@ public:
                 // Loop 3: relax heavy edges
                 {
                     pool.start();
-                    int requests_size = Rh.size();
+                    int requests_size = heavy_nodes_requested.size();
                     int chunk_size = (requests_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
                         int start = idx * chunk_size;
@@ -226,16 +246,16 @@ public:
                         }
                         pool.push([&, start, end] {
                             for (int idx_r = start; idx_r < end; ++idx_r) {
-                                const Request &request = Rh[idx_r];
-                                relax(request);
+                                int request_node;
+                                if (!heavy_nodes_requested.pop(request_node)) {
+                                    std::cerr << "[FATAL] STACK NOT WORKING PROPERLY";
+                                }
+                                relax(request_node, heavy_request_map);
                             }
                         });
                     }
                     pool.reset();
                 }
-                
-                Rh.clear();
-                Rh_map.clear();
             }
 
             pool.stop();
