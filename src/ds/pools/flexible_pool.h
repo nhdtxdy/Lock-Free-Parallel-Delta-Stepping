@@ -10,12 +10,22 @@
 #include <chrono>
 // #include <cassert>
 
-enum class ControlSignal { OK, RESET, STOP };
+#include <vector>
+#include <thread>
+#include <functional>
+#include <iostream>
+#include <mutex>
+#include <atomic>
+#include <chrono>
+// #include <cassert>
 
 // FLEXIBLEPOOL IS NOT THREAD-SAFE! (ONLY ONE THREAD SUPPOSED TO HAVE ACCESS TO THE THREAD POOL) 
 template<template<class> class QueueType>
 class FlexiblePool {
 public:
+    enum class ControlSignal { OK, RESET, STOP };
+
+
     using TaskType = std::function<ControlSignal()>;
     
     explicit FlexiblePool(unsigned int num_workers);
@@ -29,7 +39,7 @@ public:
     void stop();
     void reset();
 
-    int get_active_workers() const {
+    size_t get_active_workers() const {
         return num_active_workers;
     }
 
@@ -42,7 +52,7 @@ private:
     bool stopped = false;
     std::atomic<bool> running{false};
 
-    std::atomic<int> num_active_workers{0};
+    std::atomic<size_t> num_active_workers{0};
 
     void do_work();
 
@@ -62,7 +72,7 @@ void FlexiblePool<QueueType>::reset() {
     }
 
     // Need to ensure there are active workers first
-    int cur_active_workers;
+    size_t cur_active_workers;
     while ((cur_active_workers = num_active_workers) < num_workers) {
         num_active_workers.wait(cur_active_workers);
     }
@@ -72,9 +82,9 @@ void FlexiblePool<QueueType>::reset() {
     
     stopped = false;
 
-    for (unsigned int i = 0; i < num_workers; ++i) {
-        tasks.push([]() -> ControlSignal {
-            return ControlSignal::RESET;
+    for (size_t i = 0; i < num_workers; ++i) {
+        tasks.push([]() -> FlexiblePool::ControlSignal {
+            return FlexiblePool::ControlSignal::RESET;
         });
     }
     
@@ -148,9 +158,9 @@ template<class F, class... Args>
 void FlexiblePool<QueueType>::push(F&& f, Args&&... args) {
     tasks.push([f = std::forward<F>(f), 
                 args_tuple = std::tuple<std::decay_t<Args>...>(std::forward<Args>(args)...)]
-               () mutable noexcept -> ControlSignal {
+               () mutable noexcept -> FlexiblePool::ControlSignal {
         std::apply(std::move(f), std::move(args_tuple));
-        return ControlSignal::OK;
+        return FlexiblePool::ControlSignal::OK;
     });
 }
 
@@ -167,8 +177,8 @@ void FlexiblePool<QueueType>::stop() {
         running.notify_all();
     }
     for (size_t i = 0; i < num_workers; ++i) {
-        tasks.push([]() -> ControlSignal {
-            return ControlSignal::STOP; 
+        tasks.push([]() -> FlexiblePool::ControlSignal {
+            return FlexiblePool::ControlSignal::STOP; 
         });
     }
     for (size_t i = 0; i < num_workers; ++i) {
