@@ -8,7 +8,7 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
-#include <cassert>
+// #include <cassert>
 
 enum class ControlSignal { OK, RESET, STOP };
 
@@ -63,7 +63,7 @@ void FlexiblePool<QueueType>::reset() {
 
     // Need to ensure there are active workers first
     int cur_active_workers;
-    while ((cur_active_workers = num_active_workers) == 0) {
+    while ((cur_active_workers = num_active_workers) < num_workers) {
         num_active_workers.wait(cur_active_workers);
     }
 
@@ -82,6 +82,8 @@ void FlexiblePool<QueueType>::reset() {
     while ((cur_active_workers = num_active_workers) > 0) {
         num_active_workers.wait(cur_active_workers);
     }
+
+    // assert(tasks.empty());
 }
 
 template<template<class> class QueueType>
@@ -160,14 +162,9 @@ void FlexiblePool<QueueType>::stop() {
         std::cerr << "[FlexiblePool] [ERROR] Non-owning thread attempted to stop the thread pool.\n";
         return;
     }
-    stopped = true;
     if (!running) {
         running = true;
         running.notify_all();
-    }
-    int cur_active_workers;
-    while ((cur_active_workers = num_active_workers) == 0) {
-        num_active_workers.wait(cur_active_workers);
     }
     for (size_t i = 0; i < num_workers; ++i) {
         tasks.push([]() -> ControlSignal {
@@ -179,6 +176,7 @@ void FlexiblePool<QueueType>::stop() {
             workers[i].join();
         }
     }
+    stopped = true;
 }
 
 #endif
