@@ -66,7 +66,8 @@ public:
         position_in_bucket[source] = 0;
         dist[source] = 0;
 
-        LockFreeStack<int> light_nodes_requested, heavy_nodes_requested;
+        std::vector<int> light_nodes_requested(n), heavy_nodes_requested(n);
+        std::atomic<size_t> light_nodes_counter{0}, heavy_nodes_counter{0};
 
         std::vector<std::atomic<Request*>> light_request_map(n), heavy_request_map(n);
 
@@ -130,7 +131,7 @@ public:
         };
 
         // Strictest request optimization -- No mutexes
-        auto add_request = [&] (LockFreeStack<int> &requested_nodes, std::vector<std::atomic<Request*>> &requests, const Request &request) {
+        auto add_request = [&] (std::vector<int> &requested_nodes, std::atomic<size_t> &idx_counter, std::vector<std::atomic<Request*>> &requests, const Request &request) {
             std::atomic<Request*> &state = requests[request.v];
             double new_distance = dist[request.u] + request.w;
 
@@ -139,7 +140,8 @@ public:
                 Request *curr_state = state.load();
                 while (curr_state == nullptr && !state.compare_exchange_weak(curr_state, new_request));
                 if (curr_state == nullptr) {
-                    requested_nodes.push(request.v);
+                    size_t curr_idx = idx_counter.fetch_add(1);
+                    requested_nodes[curr_idx] = request.v;
                 }
             }
 
@@ -157,7 +159,7 @@ public:
         auto gen_light_request = [&] (int u) {
             for (const auto &[v, w] : light[u]) {
                 if (dist[u] + w < dist[v]) {
-                    add_request(light_nodes_requested, light_request_map, Request{u, v, w});
+                    add_request(light_nodes_requested, light_nodes_counter, light_request_map, Request{u, v, w});
                 }
             }
         };
@@ -165,7 +167,7 @@ public:
         auto gen_heavy_request = [&] (int u) {
             for (const auto &[v, w] : heavy[u]) {
                 if (dist[u] + w < dist[v]) {
-                    add_request(heavy_nodes_requested, heavy_request_map, Request{u, v, w});
+                    add_request(heavy_nodes_requested, heavy_nodes_counter, heavy_request_map, Request{u, v, w});
                 }
             }
         };
@@ -214,7 +216,7 @@ public:
                 {
                     // std::cerr << "loop2\n";
                     pool.start();
-                    int requests_size = light_nodes_requested.size();
+                    int requests_size = light_nodes_counter;
                     int chunk_size = (requests_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
                         int start = idx * chunk_size;
@@ -224,28 +226,26 @@ public:
                         }
                         pool.push([&, start, end] {
                             for (int idx_r = start; idx_r < end; ++idx_r) {
-                                int request_node;
-                                if (!light_nodes_requested.pop(request_node)) {
-                                    std::cerr << "[FATAL] STACK NOT WORKING PROPERLY";
-                                }
+                                int request_node = light_nodes_requested[idx_r];
                                 relax(request_node, light_request_map);
                             }
                         });
                     }
                     pool.reset();
+
+                    light_nodes_counter = 0;
                 }
 
                 {
                     // Propagate updates to buckets
 
                     pool.start();
-
                     buckets.resize(max_bucket_size);
                     int chunk_size = (updated_counter + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
                         int start = idx * chunk_size;
                         int end = start + chunk_size;
-                        if (end > updated_counter) {
+                        if (end > (int)updated_counter) {
                             end = updated_counter;
                         }
                         pool.push([&, start, end] {
@@ -254,7 +254,6 @@ public:
                             }
                         });
                     }
-
                     pool.reset();
 
                     updated_counter = 0;
@@ -264,7 +263,7 @@ public:
             // Loop 3: relax heavy edges
             {
                 pool.start();
-                int requests_size = heavy_nodes_requested.size();
+                int requests_size = heavy_nodes_counter;
                 int chunk_size = (requests_size + num_threads - 1) / num_threads;
                 for (int idx = 0; idx < num_threads; ++idx) {
                     int start = idx * chunk_size;
@@ -274,15 +273,14 @@ public:
                     }
                     pool.push([&, start, end] {
                         for (int idx_r = start; idx_r < end; ++idx_r) {
-                            int request_node;
-                            if (!heavy_nodes_requested.pop(request_node)) {
-                                std::cerr << "[FATAL] STACK NOT WORKING PROPERLY";
-                            }
+                            int request_node = heavy_nodes_requested[idx_r];
                             relax(request_node, heavy_request_map);
                         }
                     });
                 }
                 pool.reset();
+
+                heavy_nodes_counter = 0;
             }
 
             {
@@ -295,7 +293,7 @@ public:
                 for (int idx = 0; idx < num_threads; ++idx) {
                     int start = idx * chunk_size;
                     int end = start + chunk_size;
-                    if (end > updated_counter) {
+                    if (end > (int)updated_counter) {
                         end = updated_counter;
                     }
                     pool.push([&, start, end] {
