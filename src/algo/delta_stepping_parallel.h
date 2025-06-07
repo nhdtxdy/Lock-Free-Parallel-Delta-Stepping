@@ -45,7 +45,11 @@ public:
         const int MAX_BUCKET_COUNT = (int)std::ceil(graph.get_max_edge_weight() / delta) + 5;
 
         std::vector<int> position_in_bucket(n, -1);
-        std::vector<CircularVector<int>> buckets(MAX_BUCKET_COUNT, CircularVector<int>(n));
+        std::vector<CircularVector<int>> buckets;
+        buckets.reserve(MAX_BUCKET_COUNT);
+        for (int i = 0; i < MAX_BUCKET_COUNT; ++i) {
+            buckets.emplace_back(n);
+        }
         
         std::mutex buckets_resize_mutex;  // Add mutex for resize protection
         buckets[0].push(source);

@@ -2,38 +2,83 @@
 #define CIRCULAR_VECTOR_H
 
 #include <atomic>
-#include <vector>
+#include <new>
+#include <utility>
 
 // Vector that supports concurrent insertion and non-concurrent clear
+// Note: use operator new[] and placement new to avoid computation cost when creating std::vector<CircularVector>
+// Constructor only called when referred
 
 template<class E>
 class CircularVector {
 public:
-    CircularVector() {}
-    CircularVector(size_t capacity): data(capacity), capacity(capacity) {}
+    CircularVector() : data(nullptr), capacity(0) {}
+    
+    CircularVector(size_t capacity): capacity(capacity) {
+        data = static_cast<E*>(operator new[](capacity * sizeof(E)));
+    }
 
-    CircularVector(const CircularVector& other): 
-        data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {}
+    CircularVector(const CircularVector&) = delete;
+    CircularVector& operator=(const CircularVector&) = delete;
+
+    CircularVector(CircularVector& other): 
+        data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {
+        other.data = nullptr;
+        other.head = 0;
+        other.tail = 0;
+        other.capacity = 0;
+    }
 
     CircularVector(CircularVector&& other) noexcept: 
-        data(std::move(other.data)), head(other.head), tail(other.tail.load()), capacity(other.capacity) {}
+        data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {
+        other.data = nullptr;
+        other.head = 0;
+        other.tail = 0;
+        other.capacity = 0;
+    }
 
-    CircularVector& operator=(const CircularVector& other) {
+    ~CircularVector() {
+        if (data) {
+            operator delete[](data);
+        }
+    }
+
+    CircularVector& operator=(CircularVector& other) {
         if (this != &other) {
+            if (data) {
+                operator delete[](data);
+            }
+            
             data = other.data;
             head = other.head;
             tail.store(other.tail.load());
             capacity = other.capacity;
+            
+            other.data = nullptr;
+            other.head = 0;
+            other.tail = 0;
+            other.capacity = 0;
         }
         return *this;
     }
 
     CircularVector& operator=(CircularVector&& other) noexcept {
         if (this != &other) {
-            data = std::move(other.data);
+            // Clean up current data
+            if (data) {
+                operator delete[](data);
+            }
+            
+            // Move from other
+            data = other.data;
             head = other.head;
             tail.store(other.tail.load());
             capacity = other.capacity;
+            
+            other.data = nullptr;
+            other.head = 0;
+            other.tail = 0;
+            other.capacity = 0;
         }
         return *this;
     }
@@ -48,7 +93,7 @@ public:
         else {
             relative_idx = capacity - head + current_tail;
         }
-        data[current_tail] = value;
+        new (data + current_tail) E(value);
         return relative_idx;
     }
 
@@ -62,7 +107,7 @@ public:
         else {
             relative_idx = capacity - head + current_tail;
         }
-        data[current_tail] = std::move(value);
+        new (data + current_tail) E(std::move(value));
         return relative_idx;
     }
 
@@ -94,7 +139,7 @@ public:
         }
     }
 private:
-    std::vector<E> data;
+    E *data;
     size_t head{0};
     std::atomic<size_t> tail{0};
     size_t capacity = 0;
