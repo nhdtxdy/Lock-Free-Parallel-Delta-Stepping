@@ -10,9 +10,13 @@ class ThreadSafeListBase {
 public:
     virtual ~ThreadSafeListBase() = default;
 
-    virtual std::vector<E> list_all_and_clear() = 0;
+    virtual E* insert(E* node) = 0;
+    virtual E* remove(E* node) = 0;
+
+    virtual E* insert(const E &value) = 0;
+    virtual E* insert(E &&value) = 0;    
+
     virtual constexpr bool is_blocking() const = 0;
-    virtual constexpr bool is_lock_free() const = 0;
 };
 
 #endif

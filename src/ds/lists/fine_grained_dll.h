@@ -4,6 +4,8 @@
 #include "thread_safe_list_base.h"
 #include <mutex>
 #include <iostream>
+#include <atomic>
+#include <cassert>
 
 // Thread safe doubly linked list that supports random insertion/deletion
 template<class E>
@@ -19,21 +21,16 @@ public:
     // Default constructor
     FineGrainedDLL() = default;
 
-    std::vector<E> list_all_and_clear() {
-        std::vector<E> res;
-        while (head != nullptr) {
-            res.push_back(head->data);
-            remove(head);
-        }
-        return res; // NRVO -- move semantics applied automatically
-    }
-
     constexpr bool is_lock_free() const {
         return false;
     }
 
     constexpr bool is_blocking() const {
         return false;
+    }
+
+    size_t size() const {
+        return _size;
     }
 
     // Move constructor - required for std::vector operations
@@ -52,10 +49,22 @@ public:
         }
     }
 
+    DLLNode* insert(const E &value) {
+        DLLNode *new_node = new DLLNode;
+        new_node->data = value;
+        return insert(new_node);
+    }
+
+    DLLNode* insert(E &&value) {
+        DLLNode *new_node = new DLLNode;
+        new_node->data = std::move(value);
+        return insert(new_node);
+    }
+
     // insert node before head
-    bool insert(DLLNode *node) {
+    DLLNode* insert(DLLNode *node) {
         if (node == nullptr) {
-            return false;
+            return nullptr;
         }
         std::lock_guard<std::mutex> lk(head_mutex);
         if (head != nullptr) {
@@ -67,11 +76,12 @@ public:
         }
         node->prev = nullptr;
         head = node;
-        return true;
+        _size.fetch_add(1);
+        return node;
     }
-    bool remove(DLLNode *node) {
+    DLLNode* remove(DLLNode *node) {
         if (node == nullptr) {
-            return false;
+            return nullptr;
         }
 
         std::vector<std::unique_lock<std::mutex>> locks;
@@ -95,7 +105,13 @@ public:
         }
         node->prev = nullptr;
         node->next = nullptr;
-        return true;
+        _size.fetch_sub(1);
+        return node;
+    }
+    E pop_head() {
+        E res = head->data;
+        remove(head);
+        return res;
     }
     bool empty() const {
         return (head == nullptr);
@@ -103,6 +119,7 @@ public:
 private:
     DLLNode *head = nullptr;
     std::mutex head_mutex;
+    std::atomic<size_t> _size = 0;
 };
 
 #endif

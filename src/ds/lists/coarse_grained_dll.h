@@ -14,18 +14,6 @@ public:
         DLLNode *prev = nullptr;
     };
 
-    // not thread-safe
-    std::vector<E> list_all_and_clear() {
-        std::vector<E> res;
-        while (head != nullptr) {
-            Node *next = head->next;
-            res.emplace_back(std::move(head->data));
-            delete head;
-            head = next;
-        }
-        return res; // NRVO -- move semantics applied automatically
-    }
-
     constexpr bool is_lock_free() const override {
         return false;
     }
@@ -42,9 +30,19 @@ public:
         }
     }
     // insert node before head
-    bool insert(DLLNode *node) {
+    DLLNode* insert(const E &value) {
+        DLLNode *new_node = new DLLNode;
+        new_node->data = value;
+        return insert(new_node);
+    }
+    DLLNode* insert(E &&value) {
+        DLLNode *new_node = new DLLNode;
+        new_node->data = std::move(value);
+        return insert(new_node);
+    }
+    DLLNode* insert(DLLNode *node) {
         if (node == nullptr) {
-            return false;
+            return nullptr;
         }
         std::lock_guard<std::mutex> lk(global_lock);
         if (head != nullptr) {
@@ -53,11 +51,11 @@ public:
         node->next = head;
         node->prev = nullptr;
         head = node;
-        return true;
+        return node;
     }
-    bool remove(DLLNode *node) {
+    DLLNode* remove(DLLNode *node) {
         if (node == nullptr) {
-            return false;
+            return nullptr;
         }
         std::lock_guard<std::mutex> lk(global_lock);
         if (node->prev != nullptr) {
@@ -71,7 +69,7 @@ public:
         }
         node->prev = nullptr;
         node->next = nullptr;
-        return true;
+        return node;
     }
     bool empty() const {
         return (head == nullptr);
