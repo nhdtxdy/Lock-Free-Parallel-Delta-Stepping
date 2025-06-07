@@ -11,170 +11,189 @@ int main() {
     // Initialize random number generator for seeds
     std::random_device rd;
     std::mt19937 seed_gen(rd());
-    std::cout << "=== Large-Scale Graph Generator ===" << std::endl;
-    std::cout << "Generating large graphs for performance testing and benchmarking..." << std::endl << std::endl;
+    std::cout << "=== Large-Scale Graph Generator with Weight Distributions ===" << std::endl;
+    std::cout << "Generating large graphs with both uniform and power-law weight distributions..." << std::endl << std::endl;
     
-    // 1. Large random sparse graph
+    // 1. Large random sparse graph - both weight distributions
     {
-        std::cout << "1. Generating Large Random Sparse Graph..." << std::endl;
-        int n = 3e6;   // 500K vertices
-        int m = 6e7;  // 5M edges (avg degree ~20)
+        std::cout << "1. Generating Large Random Sparse Graphs (Uniform & Power-law weights)..." << std::endl;
+        int n = 2e6;   // 2M vertices
+        int m = 6e6;   // 6M edges (avg degree ~6)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lrs_3e6_6e7.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/lrs_2e6_6e6_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/lrs_2e6_6e6_powerlaw.txt");
         std::cout << std::endl;
     }
     
-    // 2. Large random dense graph
+    // 2. Large random dense graph - both weight distributions
     {
-        std::cout << "2. Generating Large Random Dense Graph..." << std::endl;
-        int n = 5e6;     // 20K vertices
-        int m = 1e8;   // 2M edges (avg degree ~200)
+        std::cout << "2. Generating Large Random Dense Graphs (Uniform & Power-law weights)..." << std::endl;
+        int n = 1e6;  // 100K vertices (reduced from 5M for practical reasons)
+        int m = 1e8; // 2M edges (avg degree ~40)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lrd_5e6_1e8.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/lrd_1e6_1e8_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/lrd_1e6_1e8_powerlaw.txt");
         std::cout << std::endl;
     }
     
-    // 3. Large complete graph
+    
+    // 3. Large grid graph - both weight distributions
     {
-        std::cout << "3. Generating Large Complete Graph..." << std::endl;
-        int n = 10000;     // 1K vertices (complete = ~500K edges)
+        std::cout << "4. Generating Large Grid Graphs (Uniform & Power-law weights)..." << std::endl;
+        int rows = 2000;   // 2000x2000 = 4M vertices
+        int cols = 2000;   // ~16M edges
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_complete_graph(n, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_grid_graph(rows, cols, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lcg_10k.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/lg_2k_2k_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_grid_graph(rows, cols, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/lg_2k_2k_powerlaw.txt");
         std::cout << std::endl;
     }
     
-    // 4. Large scale-free graph (power law degree distribution)
+    // 6. RMAT graph with skewed degree distribution - both weight distributions
     {
-        std::cout << "4. Generating Large Scale-Free Graph..." << std::endl;
-        int n = 1e7;   // 100K vertices
-        int m = 8;        // edges per new vertex (~800K edges)
+        std::cout << "6. Generating RMAT Graphs with Skewed Degree Distribution (Uniform & Power-law weights)..." << std::endl;
+        int n = 1000000;  // 1M vertices
+        int m = 5000000;  // 5M edges (avg degree ~10)
+        double A = 0.45, B = 0.22, C = 0.22;  // Parameters for highly skewed degrees
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        std::cout << "RMAT parameters: A=" << A << ", B=" << B << ", C=" << C << ", D=" << (1-A-B-C) << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_scale_free_graph(n, m, 2.5, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_rmat_graph(n, m, A, B, C, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lsf_1e7.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/rmat_1e6_5e6_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_rmat_graph(n, m, A, B, C, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/rmat_1e6_5e6_powerlaw.txt");
         std::cout << std::endl;
     }
     
-    // 5. Large grid graph
+    // 7. Large undirected random graph (social network simulation) - both weight distributions
     {
-        std::cout << "5. Generating Large Grid Graph..." << std::endl;
-        int rows = 10000;   // 1000x1000 = 1M vertices
-        int cols = 10000;   // ~4M edges
+        std::cout << "7. Generating Large Undirected Random Graphs (Uniform & Power-law weights)..." << std::endl;
+        int n = 500000;    // 500K vertices
+        int m = 5000000;   // 5M edges (bidirectional)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_grid_graph(rows, cols, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed); // undirected=true
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lg_10k_10k.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/lu_500k_5e6_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_large_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed); // undirected=true
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/lu_500k_5e6_powerlaw.txt");
         std::cout << std::endl;
     }
     
-    // 6. Large path graph
+    // 12. Large RMAT graph (similar to social networks)
     {
-        std::cout << "6. Generating Large Path Graph..." << std::endl;
-        int n = 1000000;  // 1M vertices, 1M-1 edges
+        std::cout << "12. Generating Large RMAT Graph (Social Network-like)..." << std::endl;
+        int n = 2e6;  // 2M vertices
+        int m = 1e7; // 10M edges (avg degree ~10)
+        double A = 0.45, B = 0.22, C = 0.22;  // Same skewed parameters
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
+        std::cout << "RMAT parameters: A=" << A << ", B=" << B << ", C=" << C << ", D=" << (1-A-B-C) << std::endl;
+        
+        // Uniform weights version
+        std::cout << "  -> Generating uniform weights version..." << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_path_graph(n, 0.0, 1.0, false, seed);
+        Graph graph_uniform = generate_rmat_graph(n, m, A, B, C, 0.0, 1.0, true, WeightDistribution::UNIFORM, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lp_1e6.txt");
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_uniform, "assets/test_cases/rmat_2e6_10e6_uniform.txt");
+        
+        // Power-law weights version
+        std::cout << "  -> Generating power-law weights version..." << std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        Graph graph_powerlaw = generate_rmat_graph(n, m, A, B, C, 0.0, 1.0, true, WeightDistribution::POWER_LAW, seed);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "     Generation time: " << duration.count() << " ms" << std::endl;
+        save_graph_to_file(graph_powerlaw, "assets/test_cases/rmat_2e6_10e6_powerlaw.txt");
         std::cout << std::endl;
     }
-    
-    // 7. Massive random graph
-    {
-        std::cout << "7. Generating Massive Random Graph..." << std::endl;
-        int n = 200000;   // 200K vertices
-        int m = 10000000; // 10M edges (avg degree ~100)
-        unsigned int seed = seed_gen();
-        std::cout << "Using random seed: " << seed << std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, true, seed);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/mr_200k_10e6.txt");
-        std::cout << std::endl;
-    }
-    
-    // 8. Large undirected graph (social network simulation)
-    {
-        std::cout << "8. Generating Large Undirected Graph..." << std::endl;
-        int n = 50000;    // 50K vertices
-        int m = 2000000;  // 2M directed edges = 1M undirected edges
-        unsigned int seed = seed_gen();
-        std::cout << "Using random seed: " << seed << std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, true, seed); // undirected=true
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lu_50k_2e6.txt");
-        std::cout << std::endl;
-    }
-    
-    // 9. Large grid with edge removal (sparse grid network)
-    {
-        std::cout << "9. Generating Large Grid with Edge Removal..." << std::endl;
-        int rows = 800;   // 800x800 = 640K vertices
-        int cols = 800;   // with 10% removal probability
-        unsigned int seed = seed_gen();
-        std::cout << "Using random seed: " << seed << std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_grid_graph(rows, cols, 0.0, 1.0, true, seed);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/lgr_800_800.txt");
-        std::cout << std::endl;
-    }
-    
-    // 10. Road network-like graph (extremely large but sparse)
-    {
-        std::cout << "10. Generating Road Network-like Graph..." << std::endl;
-        int n = 1000000;  // 1M vertices (road intersection scale)
-        int m = 2500000;  // 2.5M edges (avg degree ~5, like road networks)
-        unsigned int seed = seed_gen();
-        std::cout << "Using random seed: " << seed << std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, true, seed);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "assets/test_cases/rnl_1e6_2.5e6.txt");
-        std::cout << std::endl;
-    }
-    
+
+
     std::cout << "=== Large-Scale Graph Generation Complete ===" << std::endl;
-    std::cout << "Generated 10 large-scale graph types for performance testing and benchmarking." << std::endl;
-    std::cout << "Graph sizes range from 1K to 1M vertices with millions of edges." << std::endl;
+    std::cout << "Generated 8 graph types with both uniform and power-law weight distributions (16 total graphs)." << std::endl;
+    std::cout << "Graph sizes range from 5K to 5M vertices with millions of edges." << std::endl;
+    std::cout << "Weight distributions:" << std::endl;
+    std::cout << "  - Uniform: weights randomly distributed in [0,1)" << std::endl;
+    std::cout << "  - Power-law: P(w) ∝ w^(-1.287), most weights are small with few large ones" << std::endl;
     std::cout << "Each file contains edges in format: u v w (one edge per line)" << std::endl;
     std::cout << "These graphs are suitable for testing parallel shortest path algorithms." << std::endl;
     

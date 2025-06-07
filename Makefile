@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -Wall -O2 -Isrc -Isrc/core -Isrc/algo -Isrc/tests -Isrc/ds -fopenmp -MMD -MP
+CXXFLAGS = -std=c++20 -Wall -Isrc -Isrc/core -Isrc/algo -Isrc/tests -Isrc/ds -fopenmp -MMD -MP
 
 # Object files and dependency files
 MAIN_OBJ = src/main.o

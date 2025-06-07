@@ -85,7 +85,7 @@ std::vector<SolverConfig> create_solver_configurations() {
     // Add Delta Stepping Sequential with different delta values
     for (double delta : deltas) {
         configs.emplace_back(make_solver_config<DeltaSteppingSequential>(
-            "Sequential_δ=" + std::to_string(delta), delta, 1, delta));
+            "δ=" + std::to_string(delta), delta, 1, delta));
     }
     
     // Add all parallel implementations with different configurations
@@ -93,8 +93,13 @@ std::vector<SolverConfig> create_solver_configurations() {
         for (int threads : thread_counts) {
             // // Delta Stepping Parallel
             configs.emplace_back(make_solver_config<DeltaSteppingParallel>(
-                "Parallel_δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
+                "δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
                 delta, threads, delta, threads));
+
+            configs.emplace_back(make_solver_config<DSPRecycleBucket>(
+                "δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
+                delta, threads, delta, threads));
+
             
             // Delta Stepping OpenMP
             // configs.emplace_back(make_solver_config<DeltaSteppingOpenMP>(

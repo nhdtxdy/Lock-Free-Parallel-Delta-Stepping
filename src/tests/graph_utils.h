@@ -10,7 +10,48 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <cmath>
 #include "graph.h"
+
+// Enum for weight distribution types
+enum class WeightDistribution {
+    UNIFORM,
+    POWER_LAW
+};
+
+// Power-law weight generator class
+class PowerLawWeightGenerator {
+private:
+    double alpha;
+    double min_weight;
+    double max_weight;
+    double exponent;
+    double min_weight_exp;
+    double max_weight_exp;
+    double range_exp;
+    std::uniform_real_distribution<double> uniform_dist;
+    
+public:
+    PowerLawWeightGenerator(double min_w = 0.0, double max_w = 1.0, double a = 1.287) 
+        : alpha(a), min_weight(min_w), max_weight(max_w), uniform_dist(0.0, 1.0) {
+        
+        // Handle edge case where min_weight is 0 (power-law doesn't work with 0)
+        if (min_weight <= 0.0) {
+            min_weight = 1e-6; // Small positive value
+        }
+        
+        exponent = 1.0 - alpha; // 1 - 1.287 = -0.287
+        min_weight_exp = std::pow(min_weight, exponent);
+        max_weight_exp = std::pow(max_weight, exponent);
+        range_exp = max_weight_exp - min_weight_exp;
+    }
+    
+    double generate(std::mt19937& gen) {
+        double u = uniform_dist(gen);
+        double weight_exp = u * range_exp + min_weight_exp;
+        return std::pow(weight_exp, 1.0 / exponent);
+    }
+};
 
 // Function to parse graph from file (u v w format) - optimized for large files
 Graph parse_graph_from_file(const std::string& filename, bool normalize_weights = false) {
@@ -222,11 +263,13 @@ Graph extract_largest_connected_component(int n, const std::vector<Edge>& edges)
     return Graph(largest_component->size(), remapped_edges);
 }
 
-// Generate a random graph with n vertices and m edges with uniform random weights in [min_weight, max_weight)
-Graph generate_random_graph(int n, int m, double min_weight = 0.0, double max_weight = 1.0, bool undirected = false, unsigned int seed = 42) {
+// Generate a random graph with n vertices and m edges with uniform or power-law random weights in [min_weight, max_weight)
+Graph generate_random_graph(int n, int m, double min_weight = 0.0, double max_weight = 1.0, bool undirected = false, 
+                           WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, unsigned int seed = 42) {
     std::mt19937 gen(seed);
     std::uniform_int_distribution<int> vertex_dist(0, n - 1);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
     
     std::vector<Edge> edges;
     std::set<std::pair<int, int>> edge_set; // To avoid duplicate edges
@@ -236,7 +279,13 @@ Graph generate_random_graph(int n, int m, double min_weight = 0.0, double max_we
         int u = vertex_dist(gen);
         int v = vertex_dist(gen);
         if (u != v && edge_set.find({u, v}) == edge_set.end()) {
-            double w = weight_dist(gen);
+            double w;
+            if (weight_dist_type == WeightDistribution::UNIFORM) {
+                w = uniform_weight_dist(gen);
+            } else {
+                w = powerlaw_gen.generate(gen);
+            }
+            
             edges.push_back({u, v, w});
             edge_set.insert({u, v});
             
@@ -252,10 +301,12 @@ Graph generate_random_graph(int n, int m, double min_weight = 0.0, double max_we
 }
 
 // Generate a large random graph with extended attempt limit for dense graphs
-Graph generate_large_random_graph(int n, int m, double min_weight = 0., double max_weight = 1.0, bool undirected = false, unsigned int seed = 42) {
+Graph generate_large_random_graph(int n, int m, double min_weight = 0., double max_weight = 1.0, bool undirected = false, 
+                                  WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, unsigned int seed = 42) {
     std::mt19937 gen(seed);
     std::uniform_int_distribution<int> vertex_dist(0, n - 1);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
     
     std::vector<Edge> edges;
     std::unordered_set<std::pair<int, int>, std::hash<std::pair<int, int>>> edge_set;
@@ -265,7 +316,13 @@ Graph generate_large_random_graph(int n, int m, double min_weight = 0., double m
         int u = vertex_dist(gen);
         int v = vertex_dist(gen);
         if (u != v && edge_set.find({u, v}) == edge_set.end()) {
-            double w = weight_dist(gen);
+            double w;
+            if (weight_dist_type == WeightDistribution::UNIFORM) {
+                w = uniform_weight_dist(gen);
+            } else {
+                w = powerlaw_gen.generate(gen);
+            }
+            
             edges.push_back({u, v, w});
             edge_set.insert({u, v});
             
@@ -280,16 +337,24 @@ Graph generate_large_random_graph(int n, int m, double min_weight = 0., double m
     return extract_largest_connected_component(n, edges);
 }
 
-// Generate a complete graph with n vertices and uniform random weights in [min_weight, max_weight)
-Graph generate_complete_graph(int n, double min_weight = 0., double max_weight = 1.0, bool undirected = false, unsigned int seed = 42) {
+// Generate a complete graph with n vertices and uniform or power-law random weights in [min_weight, max_weight)
+Graph generate_complete_graph(int n, double min_weight = 0., double max_weight = 1.0, bool undirected = false, 
+                             WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, unsigned int seed = 42) {
     std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
     
     std::vector<Edge> edges;
     for (int u = 0; u < n; u++) {
         for (int v = 0; v < n; v++) {
             if (u != v) {
-                double w = weight_dist(gen);
+                double w;
+                if (weight_dist_type == WeightDistribution::UNIFORM) {
+                    w = uniform_weight_dist(gen);
+                } else {
+                    w = powerlaw_gen.generate(gen);
+                }
+                
                 edges.push_back({u, v, w});
                 
                 // For undirected complete graphs, we still add all edges but they represent bidirectional connections
@@ -302,128 +367,83 @@ Graph generate_complete_graph(int n, double min_weight = 0., double max_weight =
     return Graph(n, edges);
 }
 
-// Generate a scale-free graph (power law degree distribution)
-Graph generate_scale_free_graph(int n, int m, double gamma = 2.5, double min_weight = 0., double max_weight = 1.0, bool undirected = false, unsigned int seed = 42) {
+// Generate a grid graph with 10% chance of dropping edges (useful for testing algorithms on structured graphs)
+Graph generate_grid_graph(int rows, int cols, double min_weight = 0., double max_weight = 1.0, bool undirected = true, 
+                          WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, unsigned int seed = 42) {
     std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
     std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
-    
-    std::vector<Edge> edges;
-    std::vector<int> degrees(n, 0);
-    
-    // Start with a small complete graph to ensure connectivity
-    for (int i = 0; i < std::min(3, n); i++) {
-        for (int j = i + 1; j < std::min(3, n); j++) {
-            double w = weight_dist(gen);
-            edges.push_back({i, j, w});
-            degrees[i]++;
-            degrees[j]++;
-            
-            if (undirected) {
-                edges.push_back({j, i, w});
-            }
-        }
-    }
-    
-    // Add remaining vertices with preferential attachment
-    for (int new_vertex = 3; new_vertex < n; new_vertex++) {
-        int total_degree = 0;
-        for (int i = 0; i < new_vertex; i++) {
-            total_degree += degrees[i];
-        }
-        
-        int edges_to_add = std::min(m, new_vertex);
-        std::unordered_set<int> connected;
-        
-        // Ensure at least one connection to maintain connectivity
-        if (new_vertex > 0) {
-            int random_existing = std::uniform_int_distribution<int>(0, new_vertex - 1)(gen);
-            double w = weight_dist(gen);
-            edges.push_back({new_vertex, random_existing, w});
-            degrees[new_vertex]++;
-            degrees[random_existing]++;
-            connected.insert(random_existing);
-            
-            if (undirected) {
-                edges.push_back({random_existing, new_vertex, w});
-            }
-        }
-        
-        // Add additional edges using preferential attachment
-        for (int attempt = 0; attempt < edges_to_add * 3 && (int)connected.size() < edges_to_add; attempt++) {
-            for (int i = 0; i < new_vertex && (int)connected.size() < edges_to_add; i++) {
-                if (connected.count(i) == 0) {
-                    double prob = (degrees[i] + 1.0) / (total_degree + new_vertex);
-                    if (prob_dist(gen) < prob) {
-                        double w = weight_dist(gen);
-                        edges.push_back({new_vertex, i, w});
-                        degrees[new_vertex]++;
-                        degrees[i]++;
-                        connected.insert(i);
-                        
-                        if (undirected) {
-                            edges.push_back({i, new_vertex, w});
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Scale-free graphs built this way should be connected, but check to be safe
-    return extract_largest_connected_component(n, edges);
-}
-
-// Generate a grid graph (useful for testing algorithms on structured graphs)
-Graph generate_grid_graph(int rows, int cols, double min_weight = 0., double max_weight = 1.0, bool undirected = true, unsigned int seed = 42) {
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
     
     std::vector<Edge> edges;
     int n = rows * cols;
     
     auto get_index = [cols](int row, int col) { return row * cols + col; };
     
-    // Add horizontal edges
+    // Add horizontal edges with 10% chance of dropping each edge
     for (int row = 0; row < rows; row++) {
         for (int col = 0; col < cols - 1; col++) {
-            int u = get_index(row, col);
-            int v = get_index(row, col + 1);
-            double w = weight_dist(gen);
-            edges.push_back({u, v, w});
-            
-            if (undirected) {
-                edges.push_back({v, u, w});
+            if (prob_dist(gen) > 0.1) { // 90% chance to include edge
+                int u = get_index(row, col);
+                int v = get_index(row, col + 1);
+                double w;
+                if (weight_dist_type == WeightDistribution::UNIFORM) {
+                    w = uniform_weight_dist(gen);
+                } else {
+                    w = powerlaw_gen.generate(gen);
+                }
+                
+                edges.push_back({u, v, w});
+                
+                if (undirected) {
+                    edges.push_back({v, u, w});
+                }
             }
         }
     }
     
-    // Add vertical edges
+    // Add vertical edges with 10% chance of dropping each edge
     for (int row = 0; row < rows - 1; row++) {
         for (int col = 0; col < cols; col++) {
-            int u = get_index(row, col);
-            int v = get_index(row + 1, col);
-            double w = weight_dist(gen);
-            edges.push_back({u, v, w});
-            
-            if (undirected) {
-                edges.push_back({v, u, w});
+            if (prob_dist(gen) > 0.1) { // 90% chance to include edge
+                int u = get_index(row, col);
+                int v = get_index(row + 1, col);
+                double w;
+                if (weight_dist_type == WeightDistribution::UNIFORM) {
+                    w = uniform_weight_dist(gen);
+                } else {
+                    w = powerlaw_gen.generate(gen);
+                }
+                
+                edges.push_back({u, v, w});
+                
+                if (undirected) {
+                    edges.push_back({v, u, w});
+                }
             }
         }
     }
     
-    // Grid graphs are always connected by construction
-    return Graph(n, edges);
+    // With dropped edges, the graph might not be connected, so extract largest component
+    return extract_largest_connected_component(n, edges);
 }
 
 // Generate a path graph (linear chain)
-Graph generate_path_graph(int n, double min_weight = 0., double max_weight = 1.0, bool undirected = false, unsigned int seed = 42) {
+Graph generate_path_graph(int n, double min_weight = 0., double max_weight = 1.0, bool undirected = false, 
+                         WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, unsigned int seed = 42) {
     std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
     
     std::vector<Edge> edges;
     for (int i = 0; i < n - 1; i++) {
-        double w = weight_dist(gen);
+        double w;
+        if (weight_dist_type == WeightDistribution::UNIFORM) {
+            w = uniform_weight_dist(gen);
+        } else {
+            w = powerlaw_gen.generate(gen);
+        }
+        
         edges.push_back({i, i + 1, w});
         
         if (undirected) {
@@ -433,6 +453,131 @@ Graph generate_path_graph(int n, double min_weight = 0., double max_weight = 1.0
     
     // Path graphs are always connected by construction
     return Graph(n, edges);
+}
+
+// Generate RMAT graph with parameters A, B, C, D (where D = 1 - A - B - C)
+// RMAT graphs produce skewed degree distributions similar to real-world networks
+Graph generate_rmat_graph(int n, int m, double A = 0.45, double B = 0.22, double C = 0.22, 
+                         double min_weight = 0.0, double max_weight = 1.0, 
+                         bool undirected = false, WeightDistribution weight_dist_type = WeightDistribution::UNIFORM, 
+                         unsigned int seed = 42) {
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
+    std::uniform_real_distribution<double> uniform_weight_dist(min_weight, max_weight);
+    PowerLawWeightGenerator powerlaw_gen(min_weight, max_weight);
+    
+    double D = 1.0 - A - B - C;
+    if (D < 0 || A < 0 || B < 0 || C < 0) {
+        std::cerr << "Error: Invalid RMAT parameters. A, B, C must be non-negative and A+B+C <= 1" << std::endl;
+        return Graph(n, {});
+    }
+    
+    // Ensure n is a power of 2 for proper RMAT generation
+    int log_n = 0;
+    int actual_n = 1;
+    while (actual_n < n) {
+        actual_n *= 2;
+        log_n++;
+    }
+    
+    std::unordered_set<std::pair<int, int>> edge_set;
+    std::vector<Edge> edges;
+    edges.reserve(undirected ? m * 2 : m);
+    
+    // Generate m edges using RMAT algorithm
+    for (int edge_count = 0; edge_count < m; ) {
+        int u = 0, v = 0;
+        int bit_position = actual_n;
+        
+        // Recursively choose quadrant for each bit level
+        for (int level = 0; level < log_n; level++) {
+            bit_position /= 2;
+            double rand_val = prob_dist(gen);
+            
+            if (rand_val < A) {
+                // Top-left quadrant: (0,0) + offset
+                // u and v remain unchanged
+            } else if (rand_val < A + B) {
+                // Top-right quadrant: (0,1) + offset
+                v += bit_position;
+            } else if (rand_val < A + B + C) {
+                // Bottom-left quadrant: (1,0) + offset
+                u += bit_position;
+            } else {
+                // Bottom-right quadrant: (1,1) + offset
+                u += bit_position;
+                v += bit_position;
+            }
+        }
+        
+        // Ensure vertices are within bounds
+        u = u % n;
+        v = v % n;
+        
+        // Avoid self-loops and duplicate edges
+        if (u != v && edge_set.find({u, v}) == edge_set.end()) {
+            double weight;
+            if (weight_dist_type == WeightDistribution::UNIFORM) {
+                weight = uniform_weight_dist(gen);
+            } else {
+                weight = powerlaw_gen.generate(gen);
+            }
+            
+            edges.emplace_back(u, v, weight);
+            edge_set.insert({u, v});
+            edge_count++;
+            
+            if (undirected && edge_set.find({v, u}) == edge_set.end()) {
+                edges.emplace_back(v, u, weight);
+                edge_set.insert({v, u});
+            }
+        }
+    }
+    
+    std::cout << "Generated RMAT graph: " << n << " vertices, " << edges.size() << " edges" << std::endl;
+    std::cout << "RMAT parameters: A=" << A << ", B=" << B << ", C=" << C << ", D=" << D << std::endl;
+    
+    return Graph(n, edges);
+}
+
+// Convenience functions for generating graphs with power-law weight distributions
+// These functions use the same parameters as their uniform counterparts but with power-law weights
+
+// Generate a random graph with power-law weights
+Graph generate_random_graph_powerlaw(int n, int m, double min_weight = 0.0, double max_weight = 1.0, 
+                                     bool undirected = false, unsigned int seed = 42) {
+    return generate_random_graph(n, m, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
+}
+
+// Generate a large random graph with power-law weights
+Graph generate_large_random_graph_powerlaw(int n, int m, double min_weight = 0.0, double max_weight = 1.0, 
+                                           bool undirected = false, unsigned int seed = 42) {
+    return generate_large_random_graph(n, m, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
+}
+
+// Generate a complete graph with power-law weights
+Graph generate_complete_graph_powerlaw(int n, double min_weight = 0.0, double max_weight = 1.0, 
+                                      bool undirected = false, unsigned int seed = 42) {
+    return generate_complete_graph(n, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
+}
+
+// Generate a grid graph with power-law weights
+Graph generate_grid_graph_powerlaw(int rows, int cols, double min_weight = 0.0, double max_weight = 1.0, 
+                                   bool undirected = true, unsigned int seed = 42) {
+    return generate_grid_graph(rows, cols, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
+}
+
+// Generate a path graph with power-law weights
+Graph generate_path_graph_powerlaw(int n, double min_weight = 0.0, double max_weight = 1.0, 
+                                   bool undirected = false, unsigned int seed = 42) {
+    return generate_path_graph(n, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
+}
+
+// Generate an RMAT graph with power-law weights
+Graph generate_rmat_graph_powerlaw(int n, int m, double A = 0.45, double B = 0.22, double C = 0.22, 
+                                   double min_weight = 0.0, double max_weight = 1.0, 
+                                   bool undirected = false, unsigned int seed = 42) {
+    return generate_rmat_graph(n, m, A, B, C, min_weight, max_weight, undirected, WeightDistribution::POWER_LAW, seed);
 }
 
 #endif 
