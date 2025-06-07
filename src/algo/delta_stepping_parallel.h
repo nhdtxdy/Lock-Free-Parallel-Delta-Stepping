@@ -69,14 +69,14 @@ public:
         std::vector<int> light_nodes_requested(n), heavy_nodes_requested(n);
         std::atomic<size_t> light_nodes_counter{0}, heavy_nodes_counter{0};
 
-        std::vector<std::atomic<Request*>> light_request_map(n), heavy_request_map(n);
+        std::vector<std::atomic<double>> light_request_map(n), heavy_request_map(n);
 
         std::vector<int> updated_nodes(n);
         std::atomic<size_t> updated_counter{0};
         
         for (int i = 0; i < n; ++i) {
-            light_request_map[i].store(nullptr);
-            heavy_request_map[i].store(nullptr);
+            light_request_map[i].store(std::numeric_limits<double>::infinity());
+            heavy_request_map[i].store(std::numeric_limits<double>::infinity());
         }
 
         // positions is vector of atomic to node to Rl, Rh
@@ -95,25 +95,18 @@ public:
             position_in_bucket[v] = buckets[bucket_idx].push_back(v) - 1;
         };
         
-        auto relax = [&] (int request_node, std::vector<std::atomic<Request*>> &requests) {
-            Request* request_ptr = requests[request_node].exchange(nullptr);
-            if (request_ptr == nullptr) return; // Already processed
-
-            int u = request_ptr->u;
-            int v = request_ptr->v;
-            double w = request_ptr->w;
-
-            delete request_ptr;
+        auto relax = [&] (int v, std::vector<std::atomic<double>> &requests) {
+            double new_distance = requests[v].exchange(std::numeric_limits<double>::infinity());
 
             // note: during light edge relaxation, multiple readers - one writer can happen
             // but that is fine, because the next epoch will take care of this concurrency issue
-            if (dist[u] + w < dist[v]) {
+            if (new_distance < dist[v]) {
                 int old_bucket = get_bucket(v);
                 if (old_bucket != -1) {
                     buckets[old_bucket][position_in_bucket[v]] = -1;
                 }
                 
-                dist[v] = dist[u] + w;
+                dist[v] = new_distance;
 
                 size_t write_idx = updated_counter.fetch_add(1);
                 updated_nodes[write_idx] = v;
@@ -131,29 +124,21 @@ public:
         };
 
         // Strictest request optimization -- No mutexes
-        auto add_request = [&] (std::vector<int> &requested_nodes, std::atomic<size_t> &idx_counter, std::vector<std::atomic<Request*>> &requests, const Request &request) {
-            std::atomic<Request*> &state = requests[request.v];
+        auto add_request = [&] (std::vector<int> &requested_nodes, std::atomic<size_t> &idx_counter, std::vector<std::atomic<double>> &requests, const Request &request) {
+            std::atomic<double> &state = requests[request.v];
             double new_distance = dist[request.u] + request.w;
-
-            Request *new_request = new Request(request);            
-            if (state.load() == nullptr) {
-                Request *curr_state = state.load();
-                while (curr_state == nullptr && !state.compare_exchange_weak(curr_state, new_request));
-                if (curr_state == nullptr) {
+          
+            if (std::isinf(state.load())) {
+                double curr_state = state.load();
+                while (std::isinf(curr_state) && !state.compare_exchange_weak(curr_state, new_distance));
+                if (std::isinf(curr_state)) {
                     size_t curr_idx = idx_counter.fetch_add(1);
                     requested_nodes[curr_idx] = request.v;
                 }
             }
 
-            Request *current = state.load();
-            while (current && new_distance < dist[current->u] + current->w) {
-                if (state.compare_exchange_weak(current, new_request)) {
-                    // delete current;
-                    return;
-                }
-            }
-
-            // delete new_request; // if we reach this point, the new request is not better --> simply delete
+            double current_distance = state.load();
+            while (new_distance < current_distance && !state.compare_exchange_weak(current_distance, new_distance));
         };
 
         auto gen_light_request = [&] (int u) {
