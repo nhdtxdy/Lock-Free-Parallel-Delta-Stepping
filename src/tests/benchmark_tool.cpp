@@ -72,16 +72,16 @@ std::vector<SolverConfig> create_solver_configurations() {
     // Configuration parameters
     std::vector<double> deltas = {0.01, 0.2, 0.6};
     std::vector<double> parallel_deltas = {0.01, 0.2, 0.6}; // Subset for parallel testing
-    std::vector<int> thread_counts = {8, 16};
+    std::vector<int> thread_counts = {2, 4, 8, 16};
     
     // Add Dijkstra (reference implementation)
     configs.emplace_back(make_solver_config<Dijkstra>("Dijkstra", 0.0, 1));
     
     // Add Delta Stepping Sequential with different delta values
-    // for (double delta : deltas) {
-    //     configs.emplace_back(make_solver_config<DeltaSteppingSequential>(
-    //         "Sequential_δ=" + std::to_string(delta), delta, 1, delta));
-    // }
+    for (double delta : deltas) {
+        configs.emplace_back(make_solver_config<DeltaSteppingSequential>(
+            "Sequential_δ=" + std::to_string(delta), delta, 1, delta));
+    }
     
     // Add all parallel implementations with different configurations
     for (double delta : parallel_deltas) {
@@ -94,25 +94,6 @@ std::vector<SolverConfig> create_solver_configurations() {
             // Delta Stepping OpenMP
             // configs.emplace_back(make_solver_config<DeltaSteppingOpenMP>(
             //     "OpenMP_δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
-            //     delta, threads, delta, threads));
-            
-            // // Delta Stepping Dynamic
-            // configs.emplace_back(make_solver_config<DeltaSteppingDynamic>(
-            //     "Dynamic_δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
-            //     delta, threads, delta, threads));
-
-            // // Dlta Stepping Static
-            // // Delta Stepping Dynamic
-            // configs.emplace_back(make_solver_config<DeltaSteppingStatic>(
-            //     "Static_δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
-            //     delta, threads, delta, threads));
-
-            // configs.emplace_back(make_solver_config<DeltaSteppingParallelProfiled>(
-            //     "δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
-            //     delta, threads, delta, threads));
-        
-            // configs.emplace_back(make_solver_config<DeltaSteppingOpenMP>(
-            //     "δ=" + std::to_string(delta) + "_t=" + std::to_string(threads),
             //     delta, threads, delta, threads));
         }
     }

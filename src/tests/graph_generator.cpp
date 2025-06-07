@@ -22,7 +22,7 @@ int main() {
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, true, seed);
+        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
@@ -33,12 +33,12 @@ int main() {
     // 2. Large random dense graph
     {
         std::cout << "2. Generating Large Random Dense Graph..." << std::endl;
-        int n = 20000;     // 20K vertices
-        int m = 2000000;   // 2M edges (avg degree ~200)
+        int n = 5e6;     // 20K vertices
+        int m = 1e8;   // 2M edges (avg degree ~200)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, true, seed);
+        Graph graph = generate_large_random_graph(n, m, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
@@ -49,11 +49,11 @@ int main() {
     // 3. Large complete graph
     {
         std::cout << "3. Generating Large Complete Graph..." << std::endl;
-        int n = 1000;     // 1K vertices (complete = ~500K edges)
+        int n = 10000;     // 1K vertices (complete = ~500K edges)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_complete_graph(n, 0.0, 1.0, true, seed);
+        Graph graph = generate_complete_graph(n, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
@@ -64,12 +64,12 @@ int main() {
     // 4. Large scale-free graph (power law degree distribution)
     {
         std::cout << "4. Generating Large Scale-Free Graph..." << std::endl;
-        int n = 100000;   // 100K vertices
+        int n = 1e7;   // 100K vertices
         int m = 8;        // edges per new vertex (~800K edges)
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_scale_free_graph(n, m, 2.5, 0.0, 1.0, true, seed);
+        Graph graph = generate_scale_free_graph(n, m, 2.5, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
@@ -80,12 +80,12 @@ int main() {
     // 5. Large grid graph
     {
         std::cout << "5. Generating Large Grid Graph..." << std::endl;
-        int rows = 1000;   // 1000x1000 = 1M vertices
-        int cols = 1000;   // ~4M edges
+        int rows = 10000;   // 1000x1000 = 1M vertices
+        int cols = 10000;   // ~4M edges
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_grid_graph(rows, cols, 0.0, 1.0, true, seed);
+        Graph graph = generate_grid_graph(rows, cols, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
@@ -100,7 +100,7 @@ int main() {
         unsigned int seed = seed_gen();
         std::cout << "Using random seed: " << seed << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        Graph graph = generate_path_graph(n, 0.0, 1.0, true, seed);
+        Graph graph = generate_path_graph(n, 0.0, 1.0, false, seed);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
