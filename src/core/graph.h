@@ -17,7 +17,12 @@ public:
         adj.resize(n);
         for (const auto &[u, v, w] : edges) {
             adj[u].push_back({v, w});
+            max_L = std::max(max_L, w);
         }
+    }
+
+    double get_max_edge_weight() const {
+        return max_L;
     }
 
     const std::vector<AdjEdge>& operator[](int idx) const {
@@ -30,6 +35,7 @@ public:
 private:
     int n;
     std::vector<std::vector<AdjEdge>> adj;
+    double max_L = 0.;
 };
 
 #endif
