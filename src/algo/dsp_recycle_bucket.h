@@ -76,12 +76,6 @@ public:
             }
             return int(dist[v] / delta) % MAX_BUCKET_COUNT;
         };
-
-        auto insert_to_corresponding_bucket = [&] (int v) {
-            // insert node v to its corresponding bucket
-            int bucket_idx = get_bucket(v);
-            position_in_bucket[v] = buckets[bucket_idx].push_back(v) - 1;
-        };
         
         auto relax = [&] (int v, std::vector<std::atomic<double>> &requests) {
             double new_distance = requests[v].exchange(std::numeric_limits<double>::infinity());
@@ -90,16 +84,14 @@ public:
             // but that is fine, because the next epoch will take care of this concurrency issue
             if (new_distance < dist[v]) {
                 int old_bucket = get_bucket(v);
-                if (old_bucket != -1) {
+                dist[v] = new_distance;
+                int new_bucket = get_bucket(v);
+                
+                if (old_bucket != -1 && old_bucket != new_bucket) {
+                    // assert(position_in_bucket[v] < (int)buckets[old_bucket].size());
                     buckets[old_bucket][position_in_bucket[v]] = -1;
                 }
-                
-                dist[v] = new_distance;
-
-                size_t write_idx = updated_counter.fetch_add(1);
-                updated_nodes[write_idx] = v;
-                
-                // int new_bucket = get_bucket(v);
+                position_in_bucket[v] = buckets[new_bucket].push_back(v) - 1;
             }
         };
 
@@ -214,29 +206,29 @@ public:
                     light_nodes_counter = 0;
                 }
 
-                {
-                    // Propagate updates to buckets
+                // {
+                //     // Propagate updates to buckets
 
-                    pool.start();
-                    int chunk_size = (updated_counter + num_threads - 1) / num_threads;
-                    for (int idx = 0; idx < num_threads; ++idx) {
-                        int start = idx * chunk_size;
-                        int end = start + chunk_size;
-                        if (end > (int)updated_counter) {
-                            end = updated_counter;
-                        }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx = start; idx < end; ++idx) {
-                                    insert_to_corresponding_bucket(updated_nodes[idx]);
-                                }
-                            });
-                        }
-                    }
-                    pool.reset();
+                //     pool.start();
+                //     int chunk_size = (updated_counter + num_threads - 1) / num_threads;
+                //     for (int idx = 0; idx < num_threads; ++idx) {
+                //         int start = idx * chunk_size;
+                //         int end = start + chunk_size;
+                //         if (end > (int)updated_counter) {
+                //             end = updated_counter;
+                //         }
+                //         if (start < end) {
+                //             pool.push([&, start, end] {
+                //                 for (int idx = start; idx < end; ++idx) {
+                //                     insert_to_corresponding_bucket(updated_nodes[idx]);
+                //                 }
+                //             });
+                //         }
+                //     }
+                //     pool.reset();
 
-                    updated_counter = 0;
-                }
+                //     updated_counter = 0;
+                // }
             }
             
             // Loop 3: relax heavy edges
@@ -264,29 +256,29 @@ public:
                 heavy_nodes_counter = 0;
             }
 
-            {
-                // propagate updates to buckets
-                pool.start();
+            // {
+            //     // propagate updates to buckets
+            //     pool.start();
                 
-                int chunk_size = (updated_counter + num_threads - 1) / num_threads;
-                for (int idx = 0; idx < num_threads; ++idx) {
-                    int start = idx * chunk_size;
-                    int end = start + chunk_size;
-                    if (end > (int)updated_counter) {
-                        end = updated_counter;
-                    }
-                    if (start < end) {
-                        pool.push([&, start, end] {
-                            for (int idx = start; idx < end; ++idx) {
-                                insert_to_corresponding_bucket(updated_nodes[idx]);
-                            }
-                        });
-                    }
-                }
-                pool.reset();
+            //     int chunk_size = (updated_counter + num_threads - 1) / num_threads;
+            //     for (int idx = 0; idx < num_threads; ++idx) {
+            //         int start = idx * chunk_size;
+            //         int end = start + chunk_size;
+            //         if (end > (int)updated_counter) {
+            //             end = updated_counter;
+            //         }
+            //         if (start < end) {
+            //             pool.push([&, start, end] {
+            //                 for (int idx = start; idx < end; ++idx) {
+            //                     insert_to_corresponding_bucket(updated_nodes[idx]);
+            //                 }
+            //             });
+            //         }
+            //     }
+            //     pool.reset();
 
-                updated_counter = 0;
-            }
+            //     updated_counter = 0;
+            // }
         }
 
         pool.stop();

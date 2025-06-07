@@ -167,7 +167,7 @@ bool test_graph_parallel(const Graph& graph, int source, double delta, int num_t
 
     solvers.push_back(std::make_unique<DeltaSteppingSequential>(delta));
     
-    // solvers.push_back(std::make_unique<DeltaSteppingParallel>(delta, num_threads));
+    solvers.push_back(std::make_unique<DeltaSteppingParallel>(delta, num_threads));
     solvers.push_back(std::make_unique<DSPRecycleBucket>(delta, num_threads));
     // solvers.push_back(std::make_unique<DeltaSteppingOpenMP>(delta, num_threads));
     // solvers.push_back(std::make_unique<DeltaSteppingDynamic>(delta, num_threads));
