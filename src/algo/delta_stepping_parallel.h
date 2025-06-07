@@ -8,7 +8,7 @@
 #include "lists/fine_grained_dll.h"
 #include "stacks/lock_free_stack.h"
 #include "queues/queues.h"
-#include "pools/BS_thread_pool.hpp"
+#include "pools/lib/BS_thread_pool.hpp"
 #include "pools/flexible_pool.h"
 #include <type_traits>
 #include "pools/fast_pool.h"

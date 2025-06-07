@@ -9,13 +9,34 @@
 template<class E>
 class CircularVector {
 public:
-    explicit CircularVector(size_t capacity): data(capacity), head(0), tail(0), capacity(capacity) {}
+    CircularVector() {}
+    CircularVector(size_t capacity): data(capacity), capacity(capacity) {}
 
     CircularVector(const CircularVector& other): 
         data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {}
 
     CircularVector(CircularVector&& other) noexcept: 
         data(std::move(other.data)), head(other.head), tail(other.tail.load()), capacity(other.capacity) {}
+
+    CircularVector& operator=(const CircularVector& other) {
+        if (this != &other) {
+            data = other.data;
+            head = other.head;
+            tail.store(other.tail.load());
+            capacity = other.capacity;
+        }
+        return *this;
+    }
+
+    CircularVector& operator=(CircularVector&& other) noexcept {
+        if (this != &other) {
+            data = std::move(other.data);
+            head = other.head;
+            tail.store(other.tail.load());
+            capacity = other.capacity;
+        }
+        return *this;
+    }
 
     size_t push(const E &value) {
         size_t current_tail = tail.load();
@@ -74,9 +95,9 @@ public:
     }
 private:
     std::vector<E> data;
-    size_t head;
-    std::atomic<size_t> tail;
-    size_t capacity;
+    size_t head{0};
+    std::atomic<size_t> tail{0};
+    size_t capacity = 0;
 };
 
 #endif
