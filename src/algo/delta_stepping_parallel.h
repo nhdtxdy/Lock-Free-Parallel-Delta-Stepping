@@ -13,6 +13,7 @@
 #include <type_traits>
 #include "pools/fast_pool.h"
 #include "lists/thread_safe_vector.h"
+#include "lists/circular_vector.h"
 
 class DeltaSteppingParallel : public ShortestPathSolverBase {
 public:
@@ -41,12 +42,13 @@ public:
             }
         }
 
+        const int MAX_BUCKET_COUNT = (int)ceil(graph.get_max_edge_weight() / delta) + 5;
+
         std::vector<int> position_in_bucket(n, -1);
-        
-        std::vector<ThreadSafeVector<int>> buckets(1);
+        std::vector<CircularVector<int>> buckets(MAX_BUCKET_COUNT, CircularVector<int>(n));
         
         std::mutex buckets_resize_mutex;  // Add mutex for resize protection
-        buckets[0].push_back(source);
+        buckets[0].push(source);
         position_in_bucket[source] = 0;
         dist[source] = 0;
 
@@ -57,9 +59,6 @@ public:
 
         std::vector<int> updated_nodes(n);
         std::atomic<size_t> updated_counter{0};
-
-        const int MAX_BUCKET_COUNT = (int)ceil(graph.get_max_edge_weight() / delta) + 5;
-        buckets.resize(MAX_BUCKET_COUNT);
         
         for (int i = 0; i < n; ++i) {
             light_request_map[i].store(std::numeric_limits<double>::infinity());
@@ -79,7 +78,7 @@ public:
         auto insert_to_corresponding_bucket = [&] (int v) {
             // insert node v to its corresponding bucket
             int bucket_idx = get_bucket(v);
-            position_in_bucket[v] = buckets[bucket_idx].push_back(v) - 1;
+            position_in_bucket[v] = buckets[bucket_idx].push(v);
         };
         
         auto relax = [&] (int v, std::vector<std::atomic<double>> &requests) {
@@ -97,8 +96,6 @@ public:
 
                 size_t write_idx = updated_counter.fetch_add(1);
                 updated_nodes[write_idx] = v;
-                
-                // int new_bucket = get_bucket(v);
             }
         };
 
@@ -153,7 +150,7 @@ public:
                 {
                     // Loop 1: request generation
                     pool.start();
-                    ThreadSafeVector<int> &curr_bucket = buckets[generation];
+                    CircularVector<int> &curr_bucket = buckets[generation];
                     int curr_bucket_size = curr_bucket.size();
                     int chunk_size = (curr_bucket_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
