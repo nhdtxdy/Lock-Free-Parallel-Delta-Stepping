@@ -12,6 +12,82 @@
 #include <sstream>
 #include "graph.h"
 
+// Function to parse graph from file (u v w format) - optimized for large files
+Graph parse_graph_from_file(const std::string& filename, bool normalize_weights = false) {
+    std::ifstream in(filename);
+    if (!in.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return Graph(0, {});
+    }
+    
+    // Get file size to estimate number of edges for better memory allocation
+    in.seekg(0, std::ios::end);
+    std::streamsize file_size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    
+    // Estimate number of lines (rough estimate: assume 20 chars per line on average)
+    size_t estimated_edges = file_size / 20;
+    
+    std::vector<Edge> edges;
+    edges.reserve(estimated_edges);  // Pre-allocate to avoid reallocations
+    
+    std::unordered_map<int, int> index_map;
+    index_map.reserve(estimated_edges / 2);  // Rough estimate of unique vertices
+    
+    int cnt = 0;
+    double max_w = 0.0;
+    
+    // Use larger buffer for faster I/O
+    std::string line;
+    line.reserve(64);  // Reserve space for typical line length
+    
+    while (std::getline(in, line)) {
+        // Skip empty lines
+        if (line.empty()) continue;
+        
+        // Fast parsing using find and substr (faster than stringstream)
+        size_t pos1 = line.find(' ');
+        if (pos1 == std::string::npos) continue;
+        
+        size_t pos2 = line.find(' ', pos1 + 1);
+        if (pos2 == std::string::npos) continue;
+        
+        try {
+            int u = std::stoi(line.substr(0, pos1));
+            int v = std::stoi(line.substr(pos1 + 1, pos2 - pos1 - 1));
+            double w = std::stod(line.substr(pos2 + 1));
+            
+            // Use emplace for more efficient insertion (single lookup)
+            auto result_u = index_map.emplace(u, cnt);
+            if (result_u.second) cnt++;  // New vertex inserted
+            
+            auto result_v = index_map.emplace(v, cnt);
+            if (result_v.second) cnt++;  // New vertex inserted
+            
+            max_w = std::max(max_w, w);
+            edges.emplace_back(result_u.first->second, result_v.first->second, w);
+            
+        } catch (const std::exception&) {
+            // Skip malformed lines
+            continue;
+        }
+    }
+    
+    // Shrink to fit to free unused memory
+    edges.shrink_to_fit();
+    
+    if (normalize_weights && max_w > 0.0) {
+        // Vectorized division for better performance
+        const double inv_max_w = 1.0 / max_w;
+        for (Edge &edge : edges) {
+            edge.w *= inv_max_w;
+        }
+    }
+    
+    std::cout << "Loaded graph from " << filename << ": " << cnt << " vertices, " << edges.size() << " edges" << std::endl;
+    return Graph(cnt, edges);
+}
+
 void save_graph_to_file(const Graph& graph, const std::string& filename) {
     std::ofstream file(filename);
     if (!file.is_open()) {
