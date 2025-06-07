@@ -12,6 +12,7 @@
 #include "pools/flexible_pool.h"
 #include <type_traits>
 #include "pools/fast_pool.h"
+#include "lists/thread_safe_vector.h"
 
 class DeltaSteppingParallel : public ShortestPathSolverBase {
 public:
@@ -55,22 +56,22 @@ public:
             }
         }
 
-        std::vector<FineGrainedDLL<int>::DLLNode*> idx_to_addr;
-        for (int i = 0; i < n; ++i) {
-            auto *node = new FineGrainedDLL<int>::DLLNode;
-            node->data = i;
-            idx_to_addr.push_back(node);
-        }
-
-        std::vector<FineGrainedDLL<int>> buckets(1);
+        std::vector<int> position_in_bucket(n, -1);
+        
+        std::vector<ThreadSafeVector<int>> buckets(1);
+        
         std::atomic<int> max_bucket_size{1};
         std::mutex buckets_resize_mutex;  // Add mutex for resize protection
-        buckets[0].insert(idx_to_addr[source]);
+        buckets[0].push_back(source);
+        position_in_bucket[source] = 0;
         dist[source] = 0;
 
         LockFreeStack<int> light_nodes_requested, heavy_nodes_requested;
 
         std::vector<std::atomic<Request*>> light_request_map(n), heavy_request_map(n);
+
+        std::vector<int> updated_nodes(n);
+        std::atomic<size_t> updated_counter{0};
         
         for (int i = 0; i < n; ++i) {
             light_request_map[i].store(nullptr);
@@ -86,9 +87,13 @@ public:
             }
             return int(dist[v] / delta);
         };
-        
-        std::mutex lock_ngu;
 
+        auto insert_to_corresponding_bucket = [&] (int v) {
+            // insert node v to its corresponding bucket
+            int bucket_idx = get_bucket(v);
+            position_in_bucket[v] = buckets[bucket_idx].push_back(v) - 1;
+        };
+        
         auto relax = [&] (int request_node, std::vector<std::atomic<Request*>> &requests) {
             Request* request_ptr = requests[request_node].exchange(nullptr);
             if (request_ptr == nullptr) return; // Already processed
@@ -103,21 +108,24 @@ public:
             // but that is fine, because the next epoch will take care of this concurrency issue
             if (dist[u] + w < dist[v]) {
                 int old_bucket = get_bucket(v);
+                if (old_bucket != -1) {
+                    buckets[old_bucket][position_in_bucket[v]] = -1;
+                }
+                
                 dist[v] = dist[u] + w;
+
+                size_t write_idx = updated_counter.fetch_add(1);
+                updated_nodes[write_idx] = v;
+                
                 int new_bucket = get_bucket(v);
-                std::lock_guard<std::mutex> lk(lock_ngu);
-                if (old_bucket >= 0) {
-                    buckets[old_bucket].remove(idx_to_addr[v]);
-                }
                 if (new_bucket >= max_bucket_size) {
-                    std::lock_guard<std::mutex> resize_lock(buckets_resize_mutex);
-                    if (new_bucket >= max_bucket_size) {
-                        int desired = new_bucket << 1; 
-                        buckets.resize(desired);
-                        max_bucket_size.store(desired);
+                    int desired = new_bucket << 1;
+                    int cur_max_size;
+                    do {
+                        cur_max_size = max_bucket_size.load();
                     }
+                    while (desired > cur_max_size && !max_bucket_size.compare_exchange_weak(cur_max_size, desired));
                 }
-                buckets[new_bucket].insert(idx_to_addr[v]);
             }
         };
 
@@ -162,8 +170,6 @@ public:
             }
         };
 
-
-
         // bucket type is either linked list or vector
         FastPool<moodycamel::BlockingConcurrentQueue> pool(num_threads);
 
@@ -172,7 +178,7 @@ public:
                 // Loop 1: request generation
                 {
                     pool.start();
-                    auto curr_bucket = buckets[i].list_all_and_clear();
+                    ThreadSafeVector<int> &curr_bucket = buckets[i];
                     int curr_bucket_size = curr_bucket.size();
                     int chunk_size = (curr_bucket_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
@@ -184,21 +190,29 @@ public:
                         pool.push([&, start, end] {
                             for (int idx_u = start; idx_u < end; ++idx_u) {
                                 int u = curr_bucket[idx_u];
-                                gen_light_request(u);
+                                if (u >= 0) {
+                                    gen_light_request(u);
+                                }
                             }
                         });
                         pool.push([&, start, end] {
                             for (int idx_u = start; idx_u < end; ++idx_u) {
                                 int u = curr_bucket[idx_u];
-                                gen_heavy_request(u);
+                                if (u >= 0) {
+                                    gen_heavy_request(u);
+                                }
                             }
                         });
                     }
                     pool.reset(); // equivalent to join()
+
+                    curr_bucket.clear();
                 }
+
 
                 // Loop 2: relax light edges
                 {
+                    // std::cerr << "loop2\n";
                     pool.start();
                     int requests_size = light_nodes_requested.size();
                     int chunk_size = (requests_size + num_threads - 1) / num_threads;
@@ -219,6 +233,31 @@ public:
                         });
                     }
                     pool.reset();
+                }
+
+                {
+                    // Propagate updates to buckets
+
+                    pool.start();
+
+                    buckets.resize(max_bucket_size);
+                    int chunk_size = (updated_counter + num_threads - 1) / num_threads;
+                    for (int idx = 0; idx < num_threads; ++idx) {
+                        int start = idx * chunk_size;
+                        int end = start + chunk_size;
+                        if (end > updated_counter) {
+                            end = updated_counter;
+                        }
+                        pool.push([&, start, end] {
+                            for (int idx = start; idx < end; ++idx) {
+                                insert_to_corresponding_bucket(updated_nodes[idx]);
+                            }
+                        });
+                    }
+
+                    pool.reset();
+
+                    updated_counter = 0;
                 }
             }
             
@@ -244,6 +283,30 @@ public:
                     });
                 }
                 pool.reset();
+            }
+
+            {
+                // propagate updates to buckets
+                pool.start();
+                
+                buckets.resize(max_bucket_size);
+
+                int chunk_size = (updated_counter + num_threads - 1) / num_threads;
+                for (int idx = 0; idx < num_threads; ++idx) {
+                    int start = idx * chunk_size;
+                    int end = start + chunk_size;
+                    if (end > updated_counter) {
+                        end = updated_counter;
+                    }
+                    pool.push([&, start, end] {
+                        for (int idx = start; idx < end; ++idx) {
+                            insert_to_corresponding_bucket(updated_nodes[idx]);
+                        }
+                    });
+                }
+                pool.reset();
+
+                updated_counter = 0;
             }
         }
 
