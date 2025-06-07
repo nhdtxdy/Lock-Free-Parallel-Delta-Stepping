@@ -6,3 +6,4 @@ delta_benchmark
 *.o
 assets/
 *.txt
+*.csv
