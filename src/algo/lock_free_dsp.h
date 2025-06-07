@@ -1,5 +1,5 @@
-#ifndef DELTA_STEPPING_PARALLEL_H
-#define DELTA_STEPPING_PARALLEL_H
+#ifndef LOCK_FREE_DSP_H
+#define LOCK_FREE_DSP_H
 
 #include "shortest_path_solver_base.h"
 #include <limits>
@@ -15,15 +15,30 @@
 #include "lists/thread_safe_vector.h"
 #include "lists/circular_vector.h"
 
-class DeltaSteppingParallel : public ShortestPathSolverBase {
+class LockFreeDSP : public ShortestPathSolverBase {
 public:
     const std::string name() const override {
-        return "Optimized parallel delta stepping";
+        return "Almost lock free DSP";
     }
 
     using Request = Edge;
+    
+    // Verify that std::atomic<Request> is valid
+    static_assert(std::is_trivially_copyable<Request>::value);
+    static_assert(std::is_copy_constructible<Request>::value);
+    static_assert(std::is_move_constructible<Request>::value);
+    static_assert(std::is_copy_assignable<Request>::value);
+    static_assert(std::is_move_assignable<Request>::value);
+    static_assert(std::is_same<Request, typename std::remove_cv<Request>::type>::value);
 
-    DeltaSteppingParallel(double delta, int num_threads): delta(delta), num_threads(num_threads) {}
+    static_assert(std::is_trivially_copyable<Request*>::value);
+    static_assert(std::is_copy_constructible<Request*>::value);
+    static_assert(std::is_move_constructible<Request*>::value);
+    static_assert(std::is_copy_assignable<Request*>::value);
+    static_assert(std::is_move_assignable<Request*>::value);
+    static_assert(std::is_same<Request*, typename std::remove_cv<Request*>::type>::value);
+
+    LockFreeDSP(double delta, int num_threads): delta(delta), num_threads(num_threads) {}
 
     std::vector<double> compute(const Graph &graph, int source) const override {
         const double INF_MAX = std::numeric_limits<double>::infinity();
@@ -42,13 +57,13 @@ public:
             }
         }
 
-        const int MAX_BUCKET_COUNT = (int)std::ceil(graph.get_max_edge_weight() / delta) + 5;
-
         std::vector<int> position_in_bucket(n, -1);
-        std::vector<CircularVector<int>> buckets(MAX_BUCKET_COUNT, CircularVector<int>(n));
         
+        std::vector<ThreadSafeVector<int>> buckets(1);
+        
+        std::atomic<int> max_bucket_size{1};
         std::mutex buckets_resize_mutex;  // Add mutex for resize protection
-        buckets[0].push(source);
+        buckets[0].push_back(source);
         position_in_bucket[source] = 0;
         dist[source] = 0;
 
@@ -72,13 +87,13 @@ public:
             if (dist[v] == INF_MAX) {
                 return -1;
             }
-            return int(dist[v] / delta) % MAX_BUCKET_COUNT;
+            return int(dist[v] / delta);
         };
 
         auto insert_to_corresponding_bucket = [&] (int v) {
             // insert node v to its corresponding bucket
             int bucket_idx = get_bucket(v);
-            position_in_bucket[v] = buckets[bucket_idx].push(v);
+            position_in_bucket[v] = buckets[bucket_idx].push_back(v) - 1;
         };
         
         auto relax = [&] (int v, std::vector<std::atomic<double>> &requests) {
@@ -96,6 +111,16 @@ public:
 
                 size_t write_idx = updated_counter.fetch_add(1);
                 updated_nodes[write_idx] = v;
+                
+                int new_bucket = get_bucket(v);
+                if (new_bucket >= max_bucket_size) {
+                    int desired = new_bucket << 1;
+                    int cur_max_size;
+                    do {
+                        cur_max_size = max_bucket_size.load();
+                    }
+                    while (desired > cur_max_size && !max_bucket_size.compare_exchange_weak(cur_max_size, desired));
+                }
             }
         };
 
@@ -136,21 +161,12 @@ public:
         // bucket type is either linked list or vector
         FastPool<moodycamel::BlockingConcurrentQueue> pool(num_threads);
 
-        int generations_without_bucket = 0;
-        for (int generation = 0; ; ++generation, ++generations_without_bucket) {
-            if (generations_without_bucket >= MAX_BUCKET_COUNT) {
-                break;
-            }
-            if (generation >= MAX_BUCKET_COUNT) {
-                generation = 0;
-            }
-            while (!buckets[generation].empty()) {
-                generations_without_bucket = 0;
-
+        for (int i = 0; i < (int)buckets.size(); ++i) {
+            while (!buckets[i].empty()) {
+                // Loop 1: request generation
                 {
-                    // Loop 1: request generation
                     pool.start();
-                    CircularVector<int> &curr_bucket = buckets[generation];
+                    ThreadSafeVector<int> &curr_bucket = buckets[i];
                     int curr_bucket_size = curr_bucket.size();
                     int chunk_size = (curr_bucket_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
@@ -159,24 +175,22 @@ public:
                         if (end > curr_bucket_size) {
                             end = curr_bucket_size;
                         }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx_u = start; idx_u < end; ++idx_u) {
-                                    int u = curr_bucket[idx_u];
-                                    if (u >= 0) {
-                                        gen_light_request(u);
-                                    }
+                        pool.push([&, start, end] {
+                            for (int idx_u = start; idx_u < end; ++idx_u) {
+                                int u = curr_bucket[idx_u];
+                                if (u >= 0) {
+                                    gen_light_request(u);
                                 }
-                            });
-                            pool.push([&, start, end] {
-                                for (int idx_u = start; idx_u < end; ++idx_u) {
-                                    int u = curr_bucket[idx_u];
-                                    if (u >= 0) {
-                                        gen_heavy_request(u);
-                                    }
+                            }
+                        });
+                        pool.push([&, start, end] {
+                            for (int idx_u = start; idx_u < end; ++idx_u) {
+                                int u = curr_bucket[idx_u];
+                                if (u >= 0) {
+                                    gen_heavy_request(u);
                                 }
-                            });
-                        }
+                            }
+                        });
                     }
                     pool.reset(); // equivalent to join()
 
@@ -196,14 +210,12 @@ public:
                         if (end > requests_size) {
                             end = requests_size;
                         }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx_r = start; idx_r < end; ++idx_r) {
-                                    int request_node = light_nodes_requested[idx_r];
-                                    relax(request_node, light_request_map);
-                                }
-                            });
-                        }
+                        pool.push([&, start, end] {
+                            for (int idx_r = start; idx_r < end; ++idx_r) {
+                                int request_node = light_nodes_requested[idx_r];
+                                relax(request_node, light_request_map);
+                            }
+                        });
                     }
                     pool.reset();
 
@@ -214,6 +226,7 @@ public:
                     // Propagate updates to buckets
 
                     pool.start();
+                    buckets.resize(max_bucket_size);
                     int chunk_size = (updated_counter + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
                         int start = idx * chunk_size;
@@ -221,13 +234,11 @@ public:
                         if (end > (int)updated_counter) {
                             end = updated_counter;
                         }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx = start; idx < end; ++idx) {
-                                    insert_to_corresponding_bucket(updated_nodes[idx]);
-                                }
-                            });
-                        }
+                        pool.push([&, start, end] {
+                            for (int idx = start; idx < end; ++idx) {
+                                insert_to_corresponding_bucket(updated_nodes[idx]);
+                            }
+                        });
                     }
                     pool.reset();
 
@@ -246,14 +257,12 @@ public:
                     if (end > requests_size) {
                         end = requests_size;
                     }
-                    if (start < end) {
-                        pool.push([&, start, end] {
-                            for (int idx_r = start; idx_r < end; ++idx_r) {
-                                int request_node = heavy_nodes_requested[idx_r];
-                                relax(request_node, heavy_request_map);
-                            }
-                        });
-                    }
+                    pool.push([&, start, end] {
+                        for (int idx_r = start; idx_r < end; ++idx_r) {
+                            int request_node = heavy_nodes_requested[idx_r];
+                            relax(request_node, heavy_request_map);
+                        }
+                    });
                 }
                 pool.reset();
 
@@ -264,6 +273,8 @@ public:
                 // propagate updates to buckets
                 pool.start();
                 
+                buckets.resize(max_bucket_size);
+
                 int chunk_size = (updated_counter + num_threads - 1) / num_threads;
                 for (int idx = 0; idx < num_threads; ++idx) {
                     int start = idx * chunk_size;
@@ -271,13 +282,11 @@ public:
                     if (end > (int)updated_counter) {
                         end = updated_counter;
                     }
-                    if (start < end) {
-                        pool.push([&, start, end] {
-                            for (int idx = start; idx < end; ++idx) {
-                                insert_to_corresponding_bucket(updated_nodes[idx]);
-                            }
-                        });
-                    }
+                    pool.push([&, start, end] {
+                        for (int idx = start; idx < end; ++idx) {
+                            insert_to_corresponding_bucket(updated_nodes[idx]);
+                        }
+                    });
                 }
                 pool.reset();
 

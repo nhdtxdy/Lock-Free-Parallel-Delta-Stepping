@@ -26,7 +26,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_random_sparse.txt");
+        save_graph_to_file(graph, "assets/test_cases/lrs_3e6_6e7.txt");
         std::cout << std::endl;
     }
     
@@ -42,7 +42,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_random_dense.txt");
+        save_graph_to_file(graph, "assets/test_cases/lrd_5e6_1e8.txt");
         std::cout << std::endl;
     }
     
@@ -57,7 +57,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_complete.txt");
+        save_graph_to_file(graph, "assets/test_cases/lcg_10k.txt");
         std::cout << std::endl;
     }
     
@@ -73,7 +73,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_scale_free.txt");
+        save_graph_to_file(graph, "assets/test_cases/lsf_1e7.txt");
         std::cout << std::endl;
     }
     
@@ -89,7 +89,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_grid.txt");
+        save_graph_to_file(graph, "assets/test_cases/lg_10k_10k.txt");
         std::cout << std::endl;
     }
     
@@ -104,7 +104,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_path.txt");
+        save_graph_to_file(graph, "assets/test_cases/lp_1e6.txt");
         std::cout << std::endl;
     }
     
@@ -120,7 +120,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "massive_random.txt");
+        save_graph_to_file(graph, "assets/test_cases/mr_200k_10e6.txt");
         std::cout << std::endl;
     }
     
@@ -136,7 +136,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_undirected.txt");
+        save_graph_to_file(graph, "assets/test_cases/lu_50k_2e6.txt");
         std::cout << std::endl;
     }
     
@@ -152,7 +152,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "large_grid_with_removal.txt");
+        save_graph_to_file(graph, "assets/test_cases/lgr_800_800.txt");
         std::cout << std::endl;
     }
     
@@ -168,7 +168,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Generation time: " << duration.count() << " ms" << std::endl;
-        save_graph_to_file(graph, "road_network_like.txt");
+        save_graph_to_file(graph, "assets/test_cases/rnl_1e6_2.5e6.txt");
         std::cout << std::endl;
     }
     
