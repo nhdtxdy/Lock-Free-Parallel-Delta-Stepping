@@ -14,7 +14,7 @@ class CircularVector {
 public:
     CircularVector() : data(nullptr), capacity(0) {}
     
-    CircularVector(size_t capacity): capacity(capacity) {
+    CircularVector(size_t capacity_): capacity(capacity_ + 1) {
         data = static_cast<E*>(operator new[](capacity * sizeof(E)));
     }
 
@@ -22,17 +22,15 @@ public:
     CircularVector& operator=(const CircularVector&) = delete;
 
     CircularVector(CircularVector& other): 
-        data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {
+        data(other.data), tail(other.tail.load()), capacity(other.capacity) {
         other.data = nullptr;
-        other.head = 0;
         other.tail = 0;
         other.capacity = 0;
     }
 
     CircularVector(CircularVector&& other) noexcept: 
-        data(other.data), head(other.head), tail(other.tail.load()), capacity(other.capacity) {
+        data(other.data), tail(other.tail.load()), capacity(other.capacity) {
         other.data = nullptr;
-        other.head = 0;
         other.tail = 0;
         other.capacity = 0;
     }
@@ -50,12 +48,10 @@ public:
             }
             
             data = other.data;
-            head = other.head;
             tail.store(other.tail.load());
             capacity = other.capacity;
             
             other.data = nullptr;
-            other.head = 0;
             other.tail = 0;
             other.capacity = 0;
         }
@@ -71,12 +67,10 @@ public:
             
             // Move from other
             data = other.data;
-            head = other.head;
             tail.store(other.tail.load());
             capacity = other.capacity;
             
             other.data = nullptr;
-            other.head = 0;
             other.tail = 0;
             other.capacity = 0;
         }
@@ -84,63 +78,38 @@ public:
     }
 
     size_t push(const E &value) {
-        size_t current_tail = tail.load();
-        while (!tail.compare_exchange_weak(current_tail, (current_tail + 1) % capacity));
-        size_t relative_idx;
-        if (current_tail >= head) {
-            relative_idx = current_tail - head;
-        }
-        else {
-            relative_idx = capacity - head + current_tail;
-        }
+        size_t current_tail = tail.fetch_add(1);
         new (data + current_tail) E(value);
-        return relative_idx;
+        return current_tail;
     }
 
     size_t push(E &&value) {
-        size_t current_tail = tail.load();
-        while (!tail.compare_exchange_weak(current_tail, (current_tail + 1) % capacity));
-        size_t relative_idx;
-        if (current_tail >= head) {
-            relative_idx = current_tail - head;
-        }
-        else {
-            relative_idx = capacity - head + current_tail;
-        }
+        size_t current_tail = tail.fetch_add(1);
         new (data + current_tail) E(std::move(value));
-        return relative_idx;
+        return current_tail;
     }
 
     void clear() {
-        head = 0;
         tail = 0;
     }
 
     const E& operator[](size_t index) const {
-        size_t real_idx = (head + index) % capacity;
-        return data[real_idx];        
+        return data[index];        
     }
 
     E& operator[](size_t index) {
-        size_t real_idx = (head + index) % capacity;
-        return data[real_idx];
+        return data[index];
     }
 
     bool empty() const {
-        return head == tail;
+        return tail == 0;
     }
 
     size_t size() const {
-        if (tail >= head) {
-            return tail - head;
-        }
-        else {
-            return capacity - head + tail;
-        }
+        return tail;
     }
 private:
     E *data;
-    size_t head{0};
     std::atomic<size_t> tail{0};
     size_t capacity = 0;
 };

@@ -61,6 +61,8 @@ public:
 
         const int MAX_BUCKET_COUNT = (int)std::ceil(graph.get_max_edge_weight() / delta) + 5;
         buckets.resize(MAX_BUCKET_COUNT);
+
+        int current_generation = 0;
         
         for (int i = 0; i < n; ++i) {
             light_request_map[i].store(std::numeric_limits<double>::infinity());
@@ -87,8 +89,7 @@ public:
                 dist[v] = new_distance;
                 int new_bucket = get_bucket(v);
                 
-                if (old_bucket != -1 && old_bucket != new_bucket) {
-                    // assert(position_in_bucket[v] < (int)buckets[old_bucket].size());
+                if (old_bucket != -1 && old_bucket != current_generation) {
                     buckets[old_bucket][position_in_bucket[v]] = -1;
                 }
                 position_in_bucket[v] = buckets[new_bucket].push_back(v) - 1;
@@ -133,20 +134,20 @@ public:
         FastPool<moodycamel::BlockingConcurrentQueue> pool(num_threads);
 
         int generations_without_bucket = 0;
-        for (int generation = 0; ; ++generation, ++generations_without_bucket) {
+        for (current_generation = 0; ; ++current_generation, ++generations_without_bucket) {
             if (generations_without_bucket >= MAX_BUCKET_COUNT) {
                 break;
             }
-            if (generation >= MAX_BUCKET_COUNT) {
-                generation = 0;
+            if (current_generation >= MAX_BUCKET_COUNT) {
+                current_generation = 0;
             }
-            while (!buckets[generation].empty()) {
+            while (!buckets[current_generation].empty()) {
                 generations_without_bucket = 0;
 
                 {
                     // Loop 1: request generation
                     pool.start();
-                    ThreadSafeVector<int> &curr_bucket = buckets[generation];
+                    ThreadSafeVector<int> &curr_bucket = buckets[current_generation];
                     int curr_bucket_size = curr_bucket.size();
                     int chunk_size = (curr_bucket_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
