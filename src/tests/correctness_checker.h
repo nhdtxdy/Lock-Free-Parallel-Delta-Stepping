@@ -144,6 +144,16 @@ bool test_graph_with_solvers(const Graph& graph, int source, const std::vector<s
             }
             std::cout << "\nLargest difference across all vertices: " << std::scientific << std::setprecision(2) << max_diff << std::endl;
             std::cout << "\nMulti-solver test execution stopped at first failure." << std::endl;
+
+            // Save failed graph to file for debugging
+            std::ofstream failed_file("failed.txt");
+            for (int u = 0; u < graph.size(); u++) {
+                for (const auto& edge : graph[u]) {
+                    failed_file << u << " " << edge.first << " " << edge.second << std::endl;
+                }
+            }
+            failed_file.close();
+            std::cout << "Failed graph saved to failed.txt" << std::endl;
             exit(1);
         }
     }
@@ -246,7 +256,7 @@ void run_parallel_correctness_tests() {
         Graph graph = generate_random_graph(n, m, 0.0, 1.0, true, WeightDistribution::UNIFORM, random_seed);
         std::cout << "  Sparse graph " << (test+1) << "/10 (n=" << graph.size() << ", m=" << m << ") using seed: " << random_seed << std::endl;
         
-        std::vector<double> deltas = {0.02, 0.05, 0.15};
+        std::vector<double> deltas = {0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
         for (double delta : deltas) {
             for (int threads : thread_counts) {
                 current_test++;

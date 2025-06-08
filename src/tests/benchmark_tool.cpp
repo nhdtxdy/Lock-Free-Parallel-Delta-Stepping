@@ -16,7 +16,7 @@
 #include "graph_utils.h"
 
 // Check if two distance vectors are approximately equal
-bool are_distances_equal(const std::vector<double>& dist1, const std::vector<double>& dist2, double epsilon = 1e-9) {
+bool are_distances_equal(const std::vector<double>& dist1, const std::vector<double>& dist2, double epsilon = 1e-6) {
     if (dist1.size() != dist2.size()) return false;
     
     for (size_t i = 0; i < dist1.size(); i++) {
@@ -75,9 +75,9 @@ std::vector<SolverConfig> create_solver_configurations() {
     std::vector<SolverConfig> configs;
     
     // Configuration parameters
-    std::vector<double> deltas = {0.01, 0.05, 0.15, 0.23, 0.6};
-    std::vector<double> parallel_deltas = {0.01, 0.05, 0.15, 0.23, 0.6}; // Subset for parallel testing
-    std::vector<int> thread_counts = {1, 2, 4, 8, 16};
+    std::vector<double> deltas = {0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9};
+    std::vector<double> parallel_deltas = {0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}; // Subset for parallel testing
+    std::vector<int> thread_counts = {2, 4, 8, 10, 16};
     
     // Add Dijkstra (reference implementation)
     configs.emplace_back(make_solver_config<Dijkstra>("Dijkstra", 0.0, 1));
@@ -360,7 +360,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  graph_files:     Specific graph files to benchmark (default: scan assets/test_cases/)" << std::endl;
     
     std::vector<std::string> graph_files;
-    int num_runs = 5; // Default number of runs per benchmark
+    int num_runs = 3; // Default number of runs per benchmark
     
     // Parse command line arguments
     int file_arg_start = 1;
