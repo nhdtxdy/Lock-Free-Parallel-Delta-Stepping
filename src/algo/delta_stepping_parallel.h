@@ -8,10 +8,8 @@
 #include "lists/fine_grained_dll.h"
 #include "stacks/lock_free_stack.h"
 #include "queues/queues.h"
-#include "pools/lib/BS_thread_pool.hpp"
-#include "pools/flexible_pool.h"
 #include <type_traits>
-#include "pools/fast_pool.h"
+#include "pools/fixed_task_pool.h"
 #include "lists/thread_safe_vector.h"
 #include "lists/circular_vector.h"
 #include <cmath>
@@ -72,20 +70,12 @@ public:
             heavy_request_map[i].store(std::numeric_limits<double>::infinity());
         }
 
-        // positions is vector of atomic to node to Rl, Rh
-        // Rl, Rh are lock-free stack
-
         auto get_bucket = [&] (int v) {
             if (dist[v] == INF_MAX) {
                 return -1;
             }
             return int(dist[v] / delta) % MAX_BUCKET_COUNT;
         };
-
-        // auto insert_to_corresponding_bucket = [&] (int v) {
-        //     int new_bucket = get_bucket(v);
-        //     position_in_bucket[v] = buckets[new_bucket].push(v);
-        // };
 
         auto relax = [&] (int v, std::vector<std::atomic<double>> &requests) {
             double new_distance = requests[v].exchange(std::numeric_limits<double>::infinity());
@@ -139,7 +129,8 @@ public:
         };
 
         // bucket type is either linked list or vector
-        FastPool<moodycamel::BlockingConcurrentQueue> pool(num_threads);
+        std::barrier<> barrier(num_threads + 1);
+        FixedTaskPool pool(num_threads, barrier);
 
         int generations_without_bucket = 0;
         for (current_generation = 0; ; ++current_generation, ++generations_without_bucket) {
@@ -154,7 +145,6 @@ public:
 
                 {
                     // Loop 1: request generation
-                    pool.start();
                     CircularVector<int> &curr_bucket = buckets[current_generation];
                     int curr_bucket_size = curr_bucket.size();
                     int chunk_size = (curr_bucket_size + num_threads - 1) / num_threads;
@@ -164,26 +154,17 @@ public:
                         if (end > curr_bucket_size) {
                             end = curr_bucket_size;
                         }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx_u = start; idx_u < end; ++idx_u) {
-                                    int u = curr_bucket[idx_u];
-                                    if (u >= 0) {
-                                        gen_light_request(u);
-                                    }
+                        pool.push(idx, [&, start, end] {
+                            for (int idx_u = start; idx_u < end; ++idx_u) {
+                                int u = curr_bucket[idx_u];
+                                if (u >= 0) {
+                                    gen_light_request(u);
+                                    gen_heavy_request(u);
                                 }
-                            });
-                            pool.push([&, start, end] {
-                                for (int idx_u = start; idx_u < end; ++idx_u) {
-                                    int u = curr_bucket[idx_u];
-                                    if (u >= 0) {
-                                        gen_heavy_request(u);
-                                    }
-                                }
-                            });
-                        }
+                            }
+                        });
                     }
-                    pool.reset(); // equivalent to join()
+                    barrier.arrive_and_wait(); // manual sync
 
                     curr_bucket.clear();
                 }
@@ -192,7 +173,6 @@ public:
                 // Loop 2: relax light edges
                 {
                     // std::cerr << "loop2\n";
-                    pool.start();
                     int requests_size = light_nodes_counter;
                     int chunk_size = (requests_size + num_threads - 1) / num_threads;
                     for (int idx = 0; idx < num_threads; ++idx) {
@@ -201,49 +181,21 @@ public:
                         if (end > requests_size) {
                             end = requests_size;
                         }
-                        if (start < end) {
-                            pool.push([&, start, end] {
-                                for (int idx_r = start; idx_r < end; ++idx_r) {
-                                    int request_node = light_nodes_requested[idx_r];
-                                    relax(request_node, light_request_map);
-                                }
-                            });
-                        }
+                        pool.push(idx, [&, start, end] {
+                            for (int idx_r = start; idx_r < end; ++idx_r) {
+                                int request_node = light_nodes_requested[idx_r];
+                                relax(request_node, light_request_map);
+                            }
+                        });
                     }
-                    pool.reset();
+                    barrier.arrive_and_wait();
 
                     light_nodes_counter = 0;
                 }
-
-                // {
-                //     // Propagate updates to buckets
-
-                //     pool.start();
-                //     int num_nodes = updated_counter;
-                //     int chunk_size = (num_nodes + num_threads - 1) / num_threads;
-                //     for (int idx = 0; idx < num_threads; ++idx) {
-                //         int start = idx * chunk_size;
-                //         int end = start + chunk_size;
-                //         if (end > num_nodes) {
-                //             end = num_nodes;
-                //         }
-                //         if (start < end) {
-                //             pool.push([&, start, end] {
-                //                 for (int idx = start; idx < end; ++idx) {
-                //                     insert_to_corresponding_bucket(updated_nodes[idx]);
-                //                 }
-                //             });
-                //         }
-                //     }
-                //     pool.reset();
-
-                //     updated_counter = 0;
-                // }
             }
             
             // Loop 3: relax heavy edges
             {
-                pool.start();
                 int requests_size = heavy_nodes_counter;
                 int chunk_size = (requests_size + num_threads - 1) / num_threads;
                 for (int idx = 0; idx < num_threads; ++idx) {
@@ -252,46 +204,18 @@ public:
                     if (end > requests_size) {
                         end = requests_size;
                     }
-                    if (start < end) {
-                        pool.push([&, start, end] {
-                            for (int idx_r = start; idx_r < end; ++idx_r) {
-                                int request_node = heavy_nodes_requested[idx_r];
-                                relax(request_node, heavy_request_map);
-                            }
-                        });
-                    }
+                    pool.push(idx, [&, start, end] {
+                        for (int idx_r = start; idx_r < end; ++idx_r) {
+                            int request_node = heavy_nodes_requested[idx_r];
+                            relax(request_node, heavy_request_map);
+                        }
+                    });
                 }
-                pool.reset();
+                barrier.arrive_and_wait();
 
                 heavy_nodes_counter = 0;
             }
-
-            // {
-            //     // propagate updates to buckets
-            //     pool.start();
-            //     int num_nodes = updated_counter;
-            //     int chunk_size = (num_nodes + num_threads - 1) / num_threads;
-            //     for (int idx = 0; idx < num_threads; ++idx) {
-            //         int start = idx * chunk_size;
-            //         int end = start + chunk_size;
-            //         if (end > num_nodes) {
-            //             end = num_nodes;
-            //         }
-            //         if (start < end) {
-            //             pool.push([&, start, end] {
-            //                 for (int idx = start; idx < end; ++idx) {
-            //                     insert_to_corresponding_bucket(updated_nodes[idx]);
-            //                 }
-            //             });
-            //         }
-            //     }
-            //     pool.reset();
-
-            //     updated_counter = 0;
-            // }
         }
-
-        pool.stop();
 
         return dist;
     }
