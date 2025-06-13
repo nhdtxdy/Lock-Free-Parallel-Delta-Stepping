@@ -237,6 +237,8 @@ public:
             }
         }
 
+        pool.stop();
+
         return dist;
     }
 private:

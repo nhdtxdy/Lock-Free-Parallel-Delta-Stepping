@@ -33,15 +33,17 @@ public:
     }
 
     ~FixedTaskPool() {
-        for (size_t i = 0; i < num_workers; ++i) {
-            tasks[i] = ([] {
-                return false;
-            });
-            ready[i].store(true);
-            ready[i].notify_one();
-        }
-        for (size_t i = 0; i < num_workers; ++i) {
-            workers[i].join();
+        if (!stopped) {
+            for (size_t i = 0; i < num_workers; ++i) {
+                tasks[i] = ([] {
+                    return false;
+                });
+                ready[i].store(true);
+                ready[i].notify_one();
+            }
+            for (size_t i = 0; i < num_workers; ++i) {
+                workers[i].join();
+            }
         }
     }
     
@@ -57,11 +59,26 @@ public:
         ready[tid].notify_one();
     }
 
+    void stop() {
+        for (size_t i = 0; i < num_workers; ++i) {
+            tasks[i] = ([] {
+                return false;
+            });
+            ready[i].store(true);
+            ready[i].notify_one();
+        }
+        for (size_t i = 0; i < num_workers; ++i) {
+            workers[i].join();
+        }
+        stopped = true;
+    }
+
 private:
     size_t num_workers;
     std::vector<std::thread> workers;
     std::vector<TaskType> tasks;
     std::vector<std::atomic<bool>> ready;
+    bool stopped = false;
 };
 
 
