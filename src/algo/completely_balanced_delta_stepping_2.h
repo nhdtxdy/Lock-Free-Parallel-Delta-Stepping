@@ -178,14 +178,14 @@ public:
                             start_e_batch -= thread_pref[curr_ptr - 1];
                         }
 
-                        pool.push(tid, [&, start_e, end_e, start_e_batch] {
+                        pool.push(tid, [&, start_e, end_e, start_e_batch, curr_ptr] {
                             if (start_e >= end_e) {
                                 return;
                             }
 
                             size_t node_idx = std::upper_bound(prefix.begin() + curr_ptr * nodes_per_thread, prefix.begin() + std::min((curr_ptr + 1) * nodes_per_thread, curr_bucket_size), start_e_batch) - prefix.begin();
                             size_t edge_off = start_e_batch;
-                            if (node_idx > 0) edge_off -= prefix[node_idx - 1];
+                            if (node_idx > curr_ptr * nodes_per_thread) edge_off -= prefix[node_idx - 1];
                             size_t curr_edge = start_e;
 
                             while (curr_edge < end_e && node_idx < curr_bucket_size) {
@@ -262,6 +262,8 @@ public:
                 heavy_nodes_counter = 0;
             }
         }
+
+        pool.stop();
 
         return dist;
     }
