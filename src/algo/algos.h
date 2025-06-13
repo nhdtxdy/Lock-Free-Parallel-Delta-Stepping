@@ -1,4 +1,6 @@
 #include "delta_stepping_parallel.h"
+#include "completely_balanced_delta_stepping.h"
+#include "completely_balanced_delta_stepping_2.h"
 #include "delta_stepping_sequential.h"
 // #include "delta_stepping_static.h"
 // #include "delta_stepping_dynamic.h"
